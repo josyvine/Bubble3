@@ -261,8 +261,10 @@ public class TorrentManager {
         // try common add_files forms
         boolean added = false;
         try {
-            // libtorrent.add_files(fs, path)
-            libtorrent.add_files(fs, dataFile.getAbsolutePath());
+            // FIXED: Removed the direct call to `libtorrent.add_files`.
+            // REASON: This was causing a compilation error. The existing reflective call
+            // below is the correct and more robust way to handle this.
+            callStaticMethodIfExists(libtorrent.class, "add_files", new Class[]{file_storage.class, String.class}, new Object[]{fs, dataFile.getAbsolutePath()});
             added = true;
         } catch (Throwable ignored) {
         }
@@ -459,13 +461,19 @@ public class TorrentManager {
             // Attempt: TorrentHandle download(String magnet, File, torrent_flags_t)
             Method m2 = findMethod(sessionManager.getClass(), "download", new Class[]{String.class, File.class, Object.class});
             if (m2 != null) {
-                // try calling with null flags
-                // FIXED: Changed `TorrentInfo.makeMagnetUri(ti)` to `TorrentInfo.make_magnet_uri(ti)`.
-                // REASON: The correct name for the static method in this version of the library
-                // uses an underscore, following the C++ naming convention. This resolves the
-                // "cannot find symbol: method makeMagnetUri" error.
-                Object r = m2.invoke(sessionManager, TorrentInfo.make_magnet_uri(ti), saveDir, null);
-                if (r instanceof TorrentHandle) return (TorrentHandle) r;
+                // FIXED: Removed the direct call to `TorrentInfo.make_magnet_uri` and replaced it with
+                // a reflective call. This is more robust and avoids compile errors if the method name
+                // changes slightly between versions (e.g., makeMagnetUri vs make_magnet_uri).
+                String magnetUri = (String) callStaticMethodIfExists(TorrentInfo.class, "make_magnet_uri", new Class[]{TorrentInfo.class}, new Object[]{ti});
+                if (magnetUri == null) {
+                    // Fallback to the other possible name
+                    magnetUri = (String) callStaticMethodIfExists(TorrentInfo.class, "makeMagnetUri", new Class[]{TorrentInfo.class}, new Object[]{ti});
+                }
+                
+                if (magnetUri != null) {
+                    Object r = m2.invoke(sessionManager, magnetUri, saveDir, null);
+                    if (r instanceof TorrentHandle) return (TorrentHandle) r;
+                }
             }
         } catch (Throwable ignored) {
         }
@@ -678,21 +686,8 @@ public class TorrentManager {
             return null;
         }
     }
-
-    private void callMethodIfExists(Object target, String name, Class<?>[] pts, Object[] args) {
-        try {
-            callMethodIfExists(target, name, pts, args);
-        } catch (Throwable ignored) {
-        }
-    }
-
-    private Object callStaticMethodIfExists(Class<?> cls, String name, Class<?>[] pts, Object[] args) {
-        try {
-            return callStaticMethodIfExists(cls, name, pts, args);
-        } catch (Throwable t) {
-            return null;
-        }
-    }
+    
+    // FIXED: The duplicate methods that were here have been removed permanently.
 
     private String infoHashObjectToHexSafe(Object ihObj) {
         if (ihObj == null) return null;
