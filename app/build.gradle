@@ -36,6 +36,11 @@ android {
     }
 }
 
+repositories {
+    google()
+    mavenCentral()
+}
+
 dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
 
@@ -74,14 +79,13 @@ dependencies {
     // OkHttp for Gemini API
     implementation 'com.squareup.okhttp3:okhttp:4.9.3'
 
-    // Firebase BoM
+    // Firebase Bill of Materials (BoM)
     implementation platform('com.google.firebase:firebase-bom:33.0.0')
     implementation 'com.google.firebase:firebase-auth'
     implementation 'com.google.firebase:firebase-firestore'
 
-    // --- TORRENT CLIENT ---
-    // Libtorrent4j 2.2.x (API fully compatible with your Java code)
-    def libtorrentVersion = "2.2.0-33"
+    // Torrent client
+    def libtorrentVersion = "2.1.0-38"
     implementation "org.libtorrent4j:libtorrent4j:$libtorrentVersion"
     implementation "org.libtorrent4j:libtorrent4j-android-arm64:$libtorrentVersion"
     implementation "org.libtorrent4j:libtorrent4j-android-arm:$libtorrentVersion"
