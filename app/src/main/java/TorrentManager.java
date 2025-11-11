@@ -262,7 +262,7 @@ public class TorrentManager {
         boolean added = false;
         try {
             // libtorrent.add_files(fs, path)
-            callStaticMethodIfExists(libtorrent.class, "add_files", new Class[]{file_storage.class, String.class}, new Object[]{fs, dataFile.getAbsolutePath()});
+            libtorrent.add_files(fs, dataFile.getAbsolutePath());
             added = true;
         } catch (Throwable ignored) {
         }
@@ -325,11 +325,6 @@ public class TorrentManager {
             // bencoded often returns a SWIG byte_vector; convert with Vectors helper if present
             try {
                 // Try Vectors.byte_vector2bytes
-                // FIXED: Cast the `bencoded` Object to the expected `byte_vector` type.
-                // REASON: The `Vectors.byte_vector2bytes` method expects a `byte_vector` input.
-                // Your reflective `callMethodIfExists` returns a generic `Object`, so the compiler
-                // needs this explicit cast to know the type is correct. This resolves the
-                // "incompatible types" error.
                 torrentBytes = Vectors.byte_vector2bytes((byte_vector) bencoded);
             } catch (Throwable t) {
                 // Fallback: if bencoded is byte[] already
@@ -465,11 +460,11 @@ public class TorrentManager {
             Method m2 = findMethod(sessionManager.getClass(), "download", new Class[]{String.class, File.class, Object.class});
             if (m2 != null) {
                 // try calling with null flags
-                // FIXED: Replaced `ti.makeMagnetUri()` with the static method call `TorrentInfo.makeMagnetUri(ti)`.
-                // REASON: The `makeMagnetUri()` method is no longer an instance method on the TorrentInfo object
-                // in the new library version. It is now a static helper method in the TorrentInfo class.
-                // This resolves the "cannot find symbol: method makeMagnetUri()" error.
-                Object r = m2.invoke(sessionManager, TorrentInfo.makeMagnetUri(ti), saveDir, null);
+                // FIXED: Changed `TorrentInfo.makeMagnetUri(ti)` to `TorrentInfo.make_magnet_uri(ti)`.
+                // REASON: The correct name for the static method in this version of the library
+                // uses an underscore, following the C++ naming convention. This resolves the
+                // "cannot find symbol: method makeMagnetUri" error.
+                Object r = m2.invoke(sessionManager, TorrentInfo.make_magnet_uri(ti), saveDir, null);
                 if (r instanceof TorrentHandle) return (TorrentHandle) r;
             }
         } catch (Throwable ignored) {
@@ -512,11 +507,6 @@ public class TorrentManager {
 
         // If nothing returned, null
         return null;
-    }
-
-    private TorrentHandle tryAddTorrentParams(AddTorrentParams params, File saveDir, boolean _unused) {
-        // wrapper kept for compatibility
-        return tryAddTorrentParams(params, saveDir);
     }
 
     private String infoHashFromParamsHex(AddTorrentParams params) {
@@ -621,7 +611,7 @@ public class TorrentManager {
         return 0L;
     }
 
-    private Object callMethodIfExists(Object target, String methodName, Class[] paramTypes, Object[] params) throws Exception {
+    private Object callMethodIfExists(Object target, String methodName, Class<?>[] paramTypes, Object[] params) throws Exception {
         if (target == null) return null;
         Method m = findMethod(target.getClass(), methodName, paramTypes);
         if (m == null) return null;
@@ -630,17 +620,17 @@ public class TorrentManager {
     }
 
     private Object callMethodIfExists(Object target, String methodName) throws Exception {
-        return callMethodIfExists(target, methodName, new Class[]{}, new Object[]{});
+        return callMethodIfExists(target, methodName, new Class<?>[]{}, new Object[]{});
     }
 
-    private Object callStaticMethodIfExists(Class<?> cls, String methodName, Class[] paramTypes, Object[] params) throws Exception {
+    private Object callStaticMethodIfExists(Class<?> cls, String methodName, Class<?>[] paramTypes, Object[] params) throws Exception {
         Method m = findMethod(cls, methodName, paramTypes);
         if (m == null) return null;
         m.setAccessible(true);
         return m.invoke(null, params);
     }
 
-    private Method findMethod(Class<?> cls, String name, Class[] paramTypes) {
+    private Method findMethod(Class<?> cls, String name, Class<?>[] paramTypes) {
         if (cls == null) return null;
         try {
             return cls.getMethod(name, paramTypes);
@@ -650,7 +640,16 @@ public class TorrentManager {
                 if (!mm.getName().equals(name)) continue;
                 Class<?>[] pts = mm.getParameterTypes();
                 if (paramTypes == null || paramTypes.length == 0 || pts.length == paramTypes.length) {
-                    return mm;
+                    boolean match = true;
+                    if (paramTypes != null && paramTypes.length > 0) {
+                        for (int i=0; i < pts.length; i++) {
+                            if (!pts[i].isAssignableFrom(paramTypes[i])) {
+                                match = false;
+                                break;
+                            }
+                        }
+                    }
+                    if (match) return mm;
                 }
             }
             // check superclasses
@@ -660,7 +659,7 @@ public class TorrentManager {
         }
     }
 
-    private Constructor<?> findConstructor(Class<?> cls, Class[] paramTypes) {
+    private Constructor<?> findConstructor(Class<?> cls, Class<?>[] paramTypes) {
         try {
             return cls.getConstructor(paramTypes);
         } catch (NoSuchMethodException e) {
@@ -680,10 +679,20 @@ public class TorrentManager {
         }
     }
 
-    // FIXED: Removed the duplicate methods that were causing "method ... is already defined" errors.
-    // REASON: Your original file had duplicate definitions for these two wrapper methods.
-    // Removing them resolves the compilation error while leaving the functional versions intact.
-    // The previous duplicate methods were located here.
+    private void callMethodIfExists(Object target, String name, Class<?>[] pts, Object[] args) {
+        try {
+            callMethodIfExists(target, name, pts, args);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private Object callStaticMethodIfExists(Class<?> cls, String name, Class<?>[] pts, Object[] args) {
+        try {
+            return callStaticMethodIfExists(cls, name, pts, args);
+        } catch (Throwable t) {
+            return null;
+        }
+    }
 
     private String infoHashObjectToHexSafe(Object ihObj) {
         if (ihObj == null) return null;
