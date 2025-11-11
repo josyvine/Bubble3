@@ -218,11 +218,11 @@ public class TorrentManager {
                 AddTorrentParams params = new AddTorrentParams();
                 try {
                     // Many bindings: params.setTorrentInfo / setTi
-                    callMethodIfExists(params, "setTorrentInfo", new Class[]{TorrentInfo.class}, new Object[]{torrentInfo});
+                    callMethodSafely(params, "setTorrentInfo", new Class[]{TorrentInfo.class}, new Object[]{torrentInfo});
                 } catch (Throwable ignored) {
                 }
                 try {
-                    callMethodIfExists(params, "setSavePath", new Class[]{String.class}, new Object[]{dataFile.getParentFile().getAbsolutePath()});
+                    callMethodSafely(params, "setSavePath", new Class[]{String.class}, new Object[]{dataFile.getParentFile().getAbsolutePath()});
                 } catch (Throwable ignored) {
                 }
 
@@ -261,14 +261,14 @@ public class TorrentManager {
         boolean added = false;
         try {
             // libtorrent.add_files(fs, path)
-            callStaticMethodIfExists(libtorrent.class, "add_files", new Class[]{file_storage.class, String.class}, new Object[]{fs, dataFile.getAbsolutePath()});
+            callStaticSafely(libtorrent.class, "add_files", new Class[]{file_storage.class, String.class}, new Object[]{fs, dataFile.getAbsolutePath()});
             added = true;
         } catch (Throwable ignored) {
         }
         if (!added) {
             // fallback attempt: libtorrent.add_files_ex or other names
             try {
-                callStaticMethodIfExists(libtorrent.class, "add_files_ex", new Class[]{file_storage.class, String.class}, new Object[]{fs, dataFile.getAbsolutePath()});
+                callStaticSafely(libtorrent.class, "add_files_ex", new Class[]{file_storage.class, String.class}, new Object[]{fs, dataFile.getAbsolutePath()});
                 added = true;
             } catch (Throwable ignored) {
             }
@@ -281,13 +281,13 @@ public class TorrentManager {
         // piece size helpers
         int pieceSize = -1;
         try {
-            Object val = callStaticMethodIfExists(libtorrent.class, "optimal_piece_size", new Class[]{file_storage.class}, new Object[]{fs});
+            Object val = callStaticSafely(libtorrent.class, "optimal_piece_size", new Class[]{file_storage.class}, new Object[]{fs});
             if (val instanceof Number) pieceSize = ((Number) val).intValue();
         } catch (Throwable ignored) {
         }
         if (pieceSize <= 0) {
             try {
-                Object val = callStaticMethodIfExists(libtorrent.class, "piece_size", new Class[]{file_storage.class}, new Object[]{fs});
+                Object val = callStaticSafely(libtorrent.class, "piece_size", new Class[]{file_storage.class}, new Object[]{fs});
                 if (val instanceof Number) pieceSize = ((Number) val).intValue();
             } catch (Throwable ignored) {
             }
@@ -319,21 +319,12 @@ public class TorrentManager {
         // generate and bencode -> convert to byte[]
         byte[] torrentBytes;
         try {
-            Object gen = callMethodIfExists(ct, "generate");
-            Object bencoded = callMethodIfExists(gen, "bencode");
+            Object gen = callMethodSafely(ct, "generate");
+            Object bencoded = callMethodSafely(gen, "bencode");
             // bencoded often returns a SWIG byte_vector; convert with Vectors helper if present
-            try {
-                // Try Vectors.byte_vector2bytes
-                torrentBytes = Vectors.byte_vector2bytes(bencoded);
-            } catch (Throwable t) {
-                // Fallback: if bencoded is byte[] already
-                if (bencoded instanceof byte[]) {
-                    torrentBytes = (byte[]) bencoded;
-                } else {
-                    // Try reflection to access elements
-                    torrentBytes = attemptByteVectorToBytesReflective(bencoded);
-                    if (torrentBytes == null) throw new IOException("Unable to convert bencoded byte vector to byte[]");
-                }
+            torrentBytes = bencodeToBytes(bencoded);
+            if (torrentBytes == null) {
+                throw new IOException("Unable to convert bencoded byte vector to byte[]");
             }
         } catch (Throwable t) {
             throw new IOException("Failed to bencode generated torrent: " + t.getMessage(), t);
@@ -347,6 +338,23 @@ public class TorrentManager {
         return tempTorrent;
     }
 
+    private byte[] bencodeToBytes(Object bencoded) {
+        if (bencoded == null) return null;
+
+        String className = bencoded.getClass().getSimpleName().toLowerCase();
+        if (className.contains("byte_vector")) {
+            try {
+                return Vectors.byte_vector2bytes(bencoded);
+            } catch (Throwable ignored) {
+                return attemptByteVectorToBytesReflective(bencoded);
+            }
+        } else if (bencoded instanceof byte[]) {
+            return (byte[]) bencoded;
+        } else {
+            return attemptByteVectorToBytesReflective(bencoded);
+        }
+    }
+
     public void startDownload(String magnetLink, File saveDirectory, String dropRequestId) {
         if (!saveDirectory.exists()) saveDirectory.mkdirs();
 
@@ -354,7 +362,7 @@ public class TorrentManager {
             // Preferred: sessionManager.fetchMagnet(magnetLink, timeout, tempDir) if available
             byte[] torrentData = null;
             try {
-                Object fetched = callMethodIfExists(sessionManager, "fetchMagnet", new Class[]{String.class, int.class, File.class}, new Object[]{magnetLink, 30, saveDirectory});
+                Object fetched = callMethodSafely(sessionManager, "fetchMagnet", new Class[]{String.class, int.class, File.class}, new Object[]{magnetLink, 30, saveDirectory});
                 if (fetched instanceof byte[]) torrentData = (byte[]) fetched;
             } catch (Throwable ignored) {
             }
@@ -376,7 +384,7 @@ public class TorrentManager {
             // Fallback: try AddTorrentParams.parseMagnetUri and different add/download methods
             AddTorrentParams params = null;
             try {
-                params = (AddTorrentParams) callStaticMethodIfExists(AddTorrentParams.class, "parseMagnetUri", new Class[]{String.class}, new Object[]{magnetLink});
+                params = (AddTorrentParams) callStaticSafely(AddTorrentParams.class, "parseMagnetUri", new Class[]{String.class}, new Object[]{magnetLink});
             } catch (Throwable ignored) {}
 
             if (params != null) {
@@ -412,10 +420,10 @@ public class TorrentManager {
 
         // Try sessionManager.remove(handle); if not present, try removeTorrent(handle) via reflection.
         try {
-            callMethodIfExists(sessionManager, "remove", new Class[]{TorrentHandle.class}, new Object[]{handle});
+            callMethodSafely(sessionManager, "remove", new Class[]{TorrentHandle.class}, new Object[]{handle});
         } catch (Throwable t) {
             try {
-                callMethodIfExists(sessionManager, "removeTorrent", new Class[]{TorrentHandle.class}, new Object[]{handle});
+                callMethodSafely(sessionManager, "removeTorrent", new Class[]{TorrentHandle.class}, new Object[]{handle});
             } catch (Throwable t2) {
                 Log.w(TAG, "No remove method available on SessionManager: " + t2.getMessage());
             }
@@ -456,16 +464,26 @@ public class TorrentManager {
 
         try {
             // Attempt: TorrentHandle download(String magnet, File, torrent_flags_t)
+            String magnetUri = safeMakeMagnetUri(ti);
             Method m2 = findMethod(sessionManager.getClass(), "download", new Class[]{String.class, File.class, Object.class});
             if (m2 != null) {
-                // try calling with null flags
-                Object r = m2.invoke(sessionManager, ti.makeMagnetUri(), saveDir, null);
+                Object r = m2.invoke(sessionManager, magnetUri, saveDir, null);
                 if (r instanceof TorrentHandle) return (TorrentHandle) r;
             }
         } catch (Throwable ignored) {
         }
 
         return null;
+    }
+
+    private String safeMakeMagnetUri(TorrentInfo ti) {
+        String uri = (String) callMethodSafely(ti, "makeMagnetUri");
+        if (uri != null && !uri.isEmpty()) return uri;
+
+        // Fallback: construct manually
+        Object ih = callMethodSafely(ti, "infoHash");
+        String hex = infoHashObjectToHexSafe(ih);
+        return hex != null ? "magnet:?xt=urn:btih:" + hex : "";
     }
 
     private TorrentHandle tryAddTorrentParams(AddTorrentParams params, File saveDir) {
@@ -477,7 +495,7 @@ public class TorrentManager {
                 if (r instanceof TorrentHandle) return (TorrentHandle) r;
                 else if (r == null) {
                     // void return path - try to locate handle by infoHash inside params
-                    Object ti = callMethodIfExists(params, "torrentInfo");
+                    Object ti = callMethodSafely(params, "torrentInfo");
                     String hex = infoHashObjectToHexSafe(ti);
                     TorrentHandle h = findHandleByInfoHex(hex);
                     if (h != null) return h;
@@ -504,14 +522,9 @@ public class TorrentManager {
         return null;
     }
 
-    private TorrentHandle tryAddTorrentParams(AddTorrentParams params, File saveDir, boolean _unused) {
-        // wrapper kept for compatibility
-        return tryAddTorrentParams(params, saveDir);
-    }
-
     private String infoHashFromParamsHex(AddTorrentParams params) {
         try {
-            Object ti = callMethodIfExists(params, "torrentInfo");
+            Object ti = callMethodSafely(params, "torrentInfo");
             return infoHashObjectToHexSafe(ti);
         } catch (Throwable ignored) {
         }
@@ -535,7 +548,7 @@ public class TorrentManager {
                 if (list instanceof java.util.Collection) {
                     for (Object o : ((java.util.Collection) list)) {
                         try {
-                            String hx = infoHashObjectToHexSafe(callMethodIfExists(o, "infoHash"));
+                            String hx = infoHashObjectToHexSafe(callMethodSafely(o, "infoHash"));
                             if (hx != null && hx.equalsIgnoreCase(hex)) {
                                 if (o instanceof TorrentHandle) return (TorrentHandle) o;
                             }
@@ -552,18 +565,18 @@ public class TorrentManager {
         try {
             // Try common accessor names
             try {
-                Object ih = callMethodIfExists(status, "infoHash");
+                Object ih = callMethodSafely(status, "infoHash");
                 String s = infoHashObjectToHexSafe(ih);
                 if (s != null) return s;
             } catch (Throwable ignored) {}
             try {
-                Object ih = callMethodIfExists(status, "info_hash");
+                Object ih = callMethodSafely(status, "info_hash");
                 String s = infoHashObjectToHexSafe(ih);
                 if (s != null) return s;
             } catch (Throwable ignored) {}
             // Some status objects give a torrent handle
             try {
-                Object th = callMethodIfExists(status, "handle");
+                Object th = callMethodSafely(status, "handle");
                 if (th instanceof TorrentHandle) {
                     return extractInfoHashHexFromHandle((TorrentHandle) th);
                 }
@@ -583,12 +596,12 @@ public class TorrentManager {
         if (handle == null) return null;
         try {
             try {
-                Object ih = callMethodIfExists(handle, "infoHash");
+                Object ih = callMethodSafely(handle, "infoHash");
                 String s = infoHashObjectToHexSafe(ih);
                 if (s != null) return s;
             } catch (Throwable ignored) {}
             try {
-                Object ih = callMethodIfExists(handle, "info_hash");
+                Object ih = callMethodSafely(handle, "info_hash");
                 String s = infoHashObjectToHexSafe(ih);
                 if (s != null) return s;
             } catch (Throwable ignored) {}
@@ -605,29 +618,33 @@ public class TorrentManager {
 
     private long safeLong(Object obj, String methodName) {
         try {
-            Object v = callMethodIfExists(obj, methodName);
+            Object v = callMethodSafely(obj, methodName);
             if (v instanceof Number) return ((Number) v).longValue();
         } catch (Throwable ignored) {}
         return 0L;
     }
 
-    private Object callMethodIfExists(Object target, String methodName, Class[] paramTypes, Object[] params) throws Exception {
+    private Object callMethodSafely(Object target, String methodName, Class[] paramTypes, Object[] params) {
         if (target == null) return null;
         Method m = findMethod(target.getClass(), methodName, paramTypes);
         if (m == null) return null;
-        m.setAccessible(true);
-        return m.invoke(target, params);
+        try {
+            m.setAccessible(true);
+            return m.invoke(target, params);
+        } catch (Throwable t) {
+            return null;
+        }
     }
 
-    private Object callMethodIfExists(Object target, String methodName) throws Exception {
-        return callMethodIfExists(target, methodName, new Class[]{}, new Object[]{});
+    private Object callMethodSafely(Object target, String methodName) {
+        return callMethodSafely(target, methodName, new Class[]{}, new Object[]{});
     }
 
     /**
      * Safe static-method-invoker: tries to find and invoke a static method and returns the result,
      * or null on any failure. This single safe implementation replaces problematic duplicates.
      */
-    private Object callStaticMethodIfExists(Class<?> cls, String methodName, Class[] paramTypes, Object[] params) {
+    private Object callStaticSafely(Class<?> cls, String methodName, Class[] paramTypes, Object[] params) {
         if (cls == null) return null;
         try {
             Method m = findMethod(cls, methodName, paramTypes);
@@ -650,7 +667,14 @@ public class TorrentManager {
                 if (!mm.getName().equals(name)) continue;
                 Class<?>[] pts = mm.getParameterTypes();
                 if (paramTypes == null || paramTypes.length == 0 || pts.length == paramTypes.length) {
-                    return mm;
+                    boolean match = true;
+                    for (int i = 0; i < paramTypes.length; i++) {
+                        if (!pts[i].isAssignableFrom(paramTypes[i])) {
+                            match = false;
+                            break;
+                        }
+                    }
+                    if (match) return mm;
                 }
             }
             // check superclasses
@@ -667,31 +691,17 @@ public class TorrentManager {
         } catch (NoSuchMethodException e) {
             for (Constructor<?> c : cls.getConstructors()) {
                 Class<?>[] pts = c.getParameterTypes();
-                if (pts.length == paramTypes.length) return c;
+                if (pts.length == paramTypes.length) {
+                    boolean match = true;
+                    for (int i = 0; i < pts.length; i++) {
+                        if (!pts[i].isAssignableFrom(paramTypes[i])) {
+                            match = false;
+                            break;
+                        }
+                    }
+                    if (match) return c;
+                }
             }
-            return null;
-        }
-    }
-
-    private Object callMethodSafely(Object target, String name) {
-        try {
-            return callMethodIfExists(target, name);
-        } catch (Throwable t) {
-            return null;
-        }
-    }
-
-    private void callMethodIfExists(Object target, String name, Class[] pts, Object[] args) {
-        try {
-            callMethodIfExists(target, name, pts, args);
-        } catch (Throwable ignored) {
-        }
-    }
-
-    private Object callStaticMethodIfExists(Class<?> cls, String name, Class[] pts, Object[] args) {
-        try {
-            return callStaticMethodIfExists(cls, name, pts, args);
-        } catch (Throwable t) {
             return null;
         }
     }
