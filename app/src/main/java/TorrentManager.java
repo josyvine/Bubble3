@@ -31,9 +31,8 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * TorrentManager Fixed:
- * Replaced Reflection-based logic with direct API calls to libtorrent4j (v2.1.0).
- * This fixes the "Failed to generate secure link" error.
+ * TorrentManager Fixed for Build 33.0.1 and libtorrent4j 2.1.0-38 compatibility.
+ * Replaced Reflection and incompatible API calls with direct, compatible methods.
  */
 public class TorrentManager {
 
@@ -90,7 +89,8 @@ public class TorrentManager {
     private void handleStateUpdate(StateUpdateAlert alert) {
         List<TorrentStatus> statuses = alert.status();
         for (TorrentStatus status : statuses) {
-            String infoHex = status.infoHash().toHex();
+            // FIX: Use handle().infoHash() instead of status.infoHash()
+            String infoHex = status.handle().infoHash().toHex();
             if (infoHex == null) continue;
 
             String dropRequestId = hashToIdMap.get(infoHex);
@@ -99,19 +99,16 @@ public class TorrentManager {
                 intent.putExtra(DropProgressActivity.EXTRA_STATUS_MAJOR, status.isSeeding() ? "Sending File..." : "Receiving File...");
                 intent.putExtra(DropProgressActivity.EXTRA_STATUS_MINOR, "Peers: " + status.numPeers() + " | Down: " + (status.downloadPayloadRate() / 1024) + " KB/s | Up: " + (status.uploadPayloadRate() / 1024) + " KB/s");
 
-                // Safely cast progress to int for ProgressBar
                 long totalDone = status.totalDone();
                 long totalWanted = status.totalWanted();
                 
-                // Avoid divide by zero or overflow
+                int progress = 0;
                 if (totalWanted > 0) {
-                    intent.putExtra(DropProgressActivity.EXTRA_PROGRESS, (int) ((totalDone * 100) / totalWanted));
-                    intent.putExtra(DropProgressActivity.EXTRA_MAX_PROGRESS, 100);
-                } else {
-                    intent.putExtra(DropProgressActivity.EXTRA_PROGRESS, 0);
-                    intent.putExtra(DropProgressActivity.EXTRA_MAX_PROGRESS, 100);
+                    progress = (int) ((totalDone * 100) / totalWanted);
                 }
                 
+                intent.putExtra(DropProgressActivity.EXTRA_PROGRESS, progress);
+                intent.putExtra(DropProgressActivity.EXTRA_MAX_PROGRESS, 100);
                 intent.putExtra(DropProgressActivity.EXTRA_BYTES_TRANSFERRED, totalDone);
 
                 LocalBroadcastManager.getInstance(appContext).sendBroadcast(intent);
@@ -130,7 +127,6 @@ public class TorrentManager {
             LocalBroadcastManager.getInstance(appContext).sendBroadcast(intent);
         }
 
-        // Cleanup the torrent from the session to stop seeding/downloading
         cleanupTorrent(handle);
     }
 
@@ -155,7 +151,6 @@ public class TorrentManager {
 
     /**
      * Creates a torrent file and starts seeding it.
-     * Returns the Magnet URI on success, or null on failure.
      */
     public String startSeeding(File dataFile, String dropRequestId) {
         if (dataFile == null || !dataFile.exists()) {
@@ -165,20 +160,22 @@ public class TorrentManager {
 
         File torrentFile = null;
         try {
-            // 1. Create the .torrent file using direct API calls
+            // 1. Create the .torrent file
             torrentFile = createTorrentFile(dataFile);
             final TorrentInfo torrentInfo = new TorrentInfo(torrentFile);
 
-            // 2. Add the torrent to the session for seeding
-            // We save to the parent directory because the torrent file contains the relative path to the data file.
-            TorrentHandle handle = sessionManager.download(torrentInfo, dataFile.getParentFile());
+            // 2. Add the torrent to the session
+            // FIX: download() returns void, so we call it then retrieve handle separately
+            sessionManager.download(torrentInfo, dataFile.getParentFile());
+            
+            // Retrieve the handle we just added
+            TorrentHandle handle = sessionManager.find(torrentInfo.infoHash());
 
             if (handle != null && handle.isValid()) {
                 activeTorrents.put(dropRequestId, handle);
                 String infoHex = handle.infoHash().toHex();
                 hashToIdMap.put(infoHex, dropRequestId);
                 
-                // 3. Generate Magnet Link
                 String magnetLink = handle.makeMagnetUri();
                 Log.d(TAG, "Started seeding for request ID " + dropRequestId + ". Magnet: " + magnetLink);
                 return magnetLink;
@@ -190,7 +187,6 @@ public class TorrentManager {
             Log.e(TAG, "Failed to create torrent for seeding: " + e.getMessage(), e);
             return null;
         } finally {
-            // Clean up the temporary .torrent file
             if (torrentFile != null && torrentFile.exists()) {
                 torrentFile.delete();
             }
@@ -198,27 +194,25 @@ public class TorrentManager {
     }
 
     /**
-     * Helper to create a .torrent file from a source file using libtorrent4j APIs directly.
+     * Helper to create a .torrent file from a source file.
      */
     private File createTorrentFile(File dataFile) throws IOException {
         file_storage fs = new file_storage();
         
-        // Direct API call to add the file to storage layout
-        libtorrent.add_files(fs, dataFile.getAbsolutePath());
+        // FIX: Replaced missing static libtorrent.add_files with manual add_file
+        // This adds the file to the file_storage object
+        fs.add_file(dataFile.getName(), dataFile.length());
 
-        // Create torrent object
-        create_torrent ct = new create_torrent(fs);
+        // FIX: Added '0' (auto piece size) as 2nd argument to satisfy constructor
+        create_torrent ct = new create_torrent(fs, 0);
         ct.set_creator("HFM Drop");
-        ct.set_priv(true); // Private torrent (DHT disabled for this torrent usually, but useful for 1-on-1)
+        ct.set_priv(true); 
 
-        // Generate and bencode the data
         entry e = ct.generate();
         byte_vector bencoded = e.bencode();
         
-        // Convert to Java byte array
         byte[] torrentBytes = Vectors.byte_vector2bytes(bencoded);
 
-        // Save to temporary file
         File tempTorrent = File.createTempFile("seed_", ".torrent", dataFile.getParentFile());
         try (FileOutputStream fos = new FileOutputStream(tempTorrent)) {
             fos.write(torrentBytes);
@@ -234,32 +228,46 @@ public class TorrentManager {
         if (!saveDirectory.exists()) saveDirectory.mkdirs();
 
         try {
-            // Direct API call to download from magnet link
-            // Using null for the Resume Data params as this is a fresh download
-            TorrentHandle handle = sessionManager.download(magnetLink, saveDirectory);
+            // FIX: Replaced direct download(string) which doesn't exist with fetchMagnet + download(info)
+            // fetchMagnet retrieves the metadata (TorrentInfo) from the link
+            byte[] data = sessionManager.fetchMagnet(magnetLink, 30); // 30 seconds timeout
+            
+            if (data != null) {
+                TorrentInfo ti = TorrentInfo.bdecode(data);
+                
+                // Add to session
+                sessionManager.download(ti, saveDirectory);
+                
+                // Retrieve handle
+                TorrentHandle handle = sessionManager.find(ti.infoHash());
 
-            if (handle != null && handle.isValid()) {
-                activeTorrents.put(dropRequestId, handle);
-                String infoHex = handle.infoHash().toHex();
-                hashToIdMap.put(infoHex, dropRequestId);
-                
-                // Prioritize the download
-                handle.setSequentialDownload(true);
-                
-                Log.d(TAG, "Started download for request ID: " + dropRequestId);
+                if (handle != null && handle.isValid()) {
+                    activeTorrents.put(dropRequestId, handle);
+                    String infoHex = handle.infoHash().toHex();
+                    hashToIdMap.put(infoHex, dropRequestId);
+                    
+                    // FIX: Removed setSequentialDownload() as it caused symbol errors. 
+                    // Standard download behavior is sufficient for file transfer.
+                    
+                    Log.d(TAG, "Started download for request ID: " + dropRequestId);
+                } else {
+                    Log.e(TAG, "Failed to start download: Invalid handle returned.");
+                    broadcastDownloadError("Failed to initialize download session.");
+                }
             } else {
-                Log.e(TAG, "Failed to start download: Invalid handle returned.");
-                // Broadcast error
-                Intent errorIntent = new Intent(DownloadService.ACTION_DOWNLOAD_ERROR);
-                errorIntent.putExtra(DownloadService.EXTRA_ERROR_MESSAGE, "Failed to initialize download session.");
-                LocalBroadcastManager.getInstance(appContext).sendBroadcast(errorIntent);
+                Log.e(TAG, "Failed to fetch magnet metadata.");
+                broadcastDownloadError("Could not retrieve file metadata from magnet link.");
             }
         } catch (Exception e) {
             Log.e(TAG, "Failed to start download: " + e.getMessage(), e);
-            Intent errorIntent = new Intent(DownloadService.ACTION_DOWNLOAD_ERROR);
-            errorIntent.putExtra(DownloadService.EXTRA_ERROR_MESSAGE, "Download Error: " + e.getMessage());
-            LocalBroadcastManager.getInstance(appContext).sendBroadcast(errorIntent);
+            broadcastDownloadError("Download Error: " + e.getMessage());
         }
+    }
+    
+    private void broadcastDownloadError(String msg) {
+        Intent errorIntent = new Intent(DownloadService.ACTION_DOWNLOAD_ERROR);
+        errorIntent.putExtra(DownloadService.EXTRA_ERROR_MESSAGE, msg);
+        LocalBroadcastManager.getInstance(appContext).sendBroadcast(errorIntent);
     }
 
     private void cleanupTorrent(TorrentHandle handle) {
@@ -273,7 +281,6 @@ public class TorrentManager {
             hashToIdMap.remove(infoHex);
         }
 
-        // Direct API call to remove
         sessionManager.remove(handle);
 
         Log.d(TAG, "Cleaned up and removed torrent for request ID: " + (dropRequestId != null ? dropRequestId : "unknown"));
