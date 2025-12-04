@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:showIn="navigation_view">
+
+    <!-- Group for primary actions -->
+    <group android:id="@+id/group_actions" android:checkableBehavior="none">
+        <item
+            android:id="@+id/nav_browse_device"
+            android:icon="@drawable/ic_menu_browse"
+            android:title="Browse Single File" />
+
+        <item
+            android:id="@+id/nav_batch_convert"
+            android:icon="@drawable/ic_menu_browse"
+            android:title="Batch Convert Files" />
+
+        <item
+            android:id="@+id/nav_process_zip"
+            android:icon="@drawable/ic_menu_browse"
+            android:title="Process ZIP File" />
+
+        <!-- NEW: Added an option for the in-app file browser with drag-and-drop. -->
+        <item
+            android:id="@+id/nav_in_app_upload"
+            android:icon="@drawable/ic_menu_browse"
+            android:title="App in Upload" />
+    </group>
+
+    <!-- Group for settings, including the toggle -->
+    <item android:title="Options">
+        <menu>
+            <item
+                android:id="@+id/nav_set_save_folder"
+                android:icon="@drawable/ic_menu_browse"
+                android:title="Choose Save Folder" />
+            <item
+                android:id="@+id/nav_create_copies_toggle"
+                android:title="Create .txt copies"
+                app:actionLayout="@layout/action_view_switch"
+                app:showAsAction="always" />
+            <item
+                android:id="@+id/nav_help"
+                android:icon="@drawable/ic_menu_help"
+                android:title="Help" />
+        </menu>
+    </item>
+
+    <!-- This group is a placeholder where we will dynamically add 'Recent Folders' from our Java code -->
+    <group android:id="@+id/group_recent_folders" android:checkableBehavior="none">
+        <item android:title="Recent Folders" android:enabled="false" />
+    </group>
+
+    <!-- This group is a placeholder for files in the current folder -->
+    <group android:id="@+id/group_current_folder" android:checkableBehavior="none">
+        <item android:title="Files in Current Folder" android:enabled="false" />
+    </group>
+
+</menu>
+
