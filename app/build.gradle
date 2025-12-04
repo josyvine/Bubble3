@@ -2,7 +2,7 @@ apply plugin: 'com.android.application'
 
 android {
     // FIX: Added namespace required by Gradle 8.0+
-    namespace 'com.txtify.app'
+    namespace 'com.txtify.app' 
 
     // FIX: Updated SDK version to work with modern Gradle
     compileSdkVersion 34
