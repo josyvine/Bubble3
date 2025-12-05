@@ -6,10 +6,10 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-        // --- THIS IS THE FIX ---
         // Upgrade the Android Gradle Plugin to a version compatible with modern libraries and SDK 34.
-        classpath 'com.android.tools.build:gradle:8.1.4' // <<< THIS LINE HAS BEEN UPDATED
-        // Add the Google services classpath for Firebase integration
+        classpath 'com.android.tools.build:gradle:8.1.4'
+        
+        // REQUIRED: Add the Google services classpath for AdMob integration
         classpath 'com.google.gms:google-services:4.4.1'
     }
 }
@@ -21,7 +21,6 @@ allprojects {
         mavenCentral()
         // Jitpack is sometimes needed for other libraries.
         maven { url "https://jitpack.io" }
-        // Removed FrostWire repo - use Maven Central instead
     }
 }
 
