@@ -1,4 +1,4 @@
-package com.txtify.app;
+package com.txtify.app; 
 
 import android.Manifest;
 import android.content.ClipData;
