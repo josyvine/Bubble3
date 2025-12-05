@@ -1,13 +1,17 @@
 apply plugin: 'com.android.application'
 
 android {
-    compileSdkVersion 28
-    buildToolsVersion "28.0.3"
+    // FIX: Added namespace required by Gradle 8.0+
+    namespace 'com.app.bubble'
+
+    // FIX: Updated SDK version to work with modern Gradle
+    compileSdkVersion 34
 
     defaultConfig {
         applicationId "com.app.bubble"
         minSdkVersion 21
-        targetSdkVersion 28
+        // FIX: Updated target SDK to match compile SDK
+        targetSdkVersion 34
         versionCode 1
         versionName "1.0"
     }
@@ -25,7 +29,7 @@ android {
 
 dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
-    
+
     // Using the correct AndroidX library for AIDE compatibility
     implementation 'androidx.appcompat:appcompat:1.1.0'
 
@@ -36,4 +40,3 @@ dependencies {
     // AdMob dependency for banner ads
     implementation 'com.google.android.gms:play-services-ads:18.3.0'
 }
-
