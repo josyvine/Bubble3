@@ -1,15 +1,20 @@
 package com.app.bubble;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.ComponentName;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentSender;
-import  android.media.projection.MediaProjectionManager;
+import android.media.projection.MediaProjectionManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.text.TextUtils;
 import android.view.View;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.Toast;
 
@@ -49,6 +54,61 @@ public class MainActivity extends Activity { // It is now Activity, NOT AppCompa
         // NEW: Check for immediate updates when app starts
         appUpdateManager = AppUpdateManagerFactory.create(this);
         checkForAppUpdate();
+
+        // NEW: Prompt user to enable advanced features (Keyboard & Auto-Scroll)
+        checkAndPromptForServices();
+    }
+
+    // NEW: Check if services are enabled and show dialog if not
+    private void checkAndPromptForServices() {
+        boolean isKeyboardEnabled = isInputMethodEnabled();
+        boolean isAccessibilityEnabled = isAccessibilityEnabled();
+
+        if (!isKeyboardEnabled || !isAccessibilityEnabled) {
+            new AlertDialog.Builder(this)
+                .setTitle("Enable Advanced Features")
+                .setMessage("To use the Two-Line Copy and Auto-Scroll features, you must enable the Bubble Keyboard and Accessibility Service in settings.")
+                .setPositiveButton("Enable Keyboard", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        Intent intent = new Intent(Settings.ACTION_INPUT_METHOD_SETTINGS);
+                        startActivity(intent);
+                    }
+                })
+                .setNeutralButton("Enable Accessibility", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        Intent intent = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);
+                        startActivity(intent);
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+        }
+    }
+
+    // NEW: Check if our Custom Keyboard is enabled
+    private boolean isInputMethodEnabled() {
+        String id = Settings.Secure.getString(getContentResolver(), Settings.Secure.ENABLED_INPUT_METHODS);
+        ComponentName componentName = new ComponentName(this, BubbleKeyboardService.class);
+        return id != null && id.contains(componentName.flattenToShortString());
+    }
+
+    // NEW: Check if our Accessibility Service is enabled
+    private boolean isAccessibilityEnabled() {
+        String prefString = Settings.Secure.getString(getContentResolver(), Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+        if (prefString != null) {
+            TextUtils.SimpleStringSplitter splitter = new TextUtils.SimpleStringSplitter(':');
+            splitter.setString(prefString);
+            ComponentName componentName = new ComponentName(this, GlobalScrollService.class);
+            while (splitter.hasNext()) {
+                String accessibilityService = splitter.next();
+                if (accessibilityService.equalsIgnoreCase(componentName.flattenToString())) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     // NEW: Method to check for Google Play updates
