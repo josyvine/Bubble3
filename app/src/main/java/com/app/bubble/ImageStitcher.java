@@ -3,7 +3,7 @@ package com.app.bubble;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
-import java.util.List;
+import java.util.List; 
 
 public class ImageStitcher {
 
