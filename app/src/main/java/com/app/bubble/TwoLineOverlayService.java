@@ -8,6 +8,7 @@ import android.os.Build;
 import android.os.IBinder;
 import android.view.Gravity;
 import android.view.LayoutInflater;
+import android.view.MotionEvent; // FIX: Added missing import
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
@@ -24,13 +25,13 @@ public class TwoLineOverlayService extends Service {
     private WindowManager.LayoutParams linesParams;
     private View lineTop, lineBottom;
     private ImageView handleTop, handleBottom;
+    private TextView helperText;
     
     // Window 2: The Controls (Bottom Only)
     private View controlsView;
     private WindowManager.LayoutParams controlsParams;
     private Button btnAction;
     private ImageView btnClose;
-    private TextView helperText;
 
     private int currentState = 0; // 0=Set Green, 1=Scrolling, 2=Set Red
     private int screenHeight;
@@ -109,9 +110,9 @@ public class TwoLineOverlayService extends Service {
             public void onClick(View v) {
                 // Ensure scrolling stops if we close mid-way
                 GlobalScrollService.stopScroll();
-                Intent intent = new Intent(TwoLineOverlayService.this, FloatingTranslatorService.class);
                 // Signal to stop burst if running
-                // We rely on stopSelf() triggering cleanup, but explict stop is safer
+                FloatingTranslatorService service = FloatingTranslatorService.getInstance();
+                if (service != null) service.stopBurstCapture();
                 stopSelf();
             }
         });
@@ -129,7 +130,8 @@ public class TwoLineOverlayService extends Service {
                     
                     // 2. Change Action Button
                     btnAction.setText("STOP SCROLL");
-                    btnAction.setBackgroundColor(0xFFFF0000); // Red color for Stop
+                    // 0xFFFF0000 is Red
+                    btnAction.setBackgroundColor(0xFFFF0000); 
 
                     // 3. Make Lines Window "Pass Through" so user can scroll browser
                     linesParams.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE | 
@@ -160,7 +162,8 @@ public class TwoLineOverlayService extends Service {
                     // 4. Update UI
                     helperText.setText("Place Red Line at END of text.");
                     btnAction.setText("COPY");
-                    btnAction.setBackgroundColor(0xFF4CAF50); // Green color for Copy
+                    // 0xFF4CAF50 is Green
+                    btnAction.setBackgroundColor(0xFF4CAF50); 
 
                 } else {
                     // STATE: RED LINE SET -> COPY
