@@ -50,7 +50,8 @@ public class BubbleKeyboardService extends InputMethodService implements Keyboar
                 break;
                 
             case Keyboard.KEYCODE_DONE:
-            case -4: // Enter
+                // Handles the Enter key action. 
+                // Removed duplicate 'case -4' which caused the build error.
                 ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER));
                 break;
                 
