@@ -25,7 +25,6 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.util.DisplayMetrics;
-import android.util.SparseArray;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.MenuItem;
@@ -40,17 +39,24 @@ import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
+// AdMob
 import com.google.android.gms.ads.AdRequest;
 import com.google.android.gms.ads.AdView;
 import com.google.android.gms.ads.MobileAds;
-import com.google.android.gms.vision.Frame;
-import com.google.android.gms.vision.text.TextBlock;
-import com.google.android.gms.vision.text.TextRecognizer;
+
+// FIX: New ML Kit Imports
+import com.google.android.gms.tasks.Tasks;
+import com.google.mlkit.vision.common.InputImage;
+import com.google.mlkit.vision.text.Text;
+import com.google.mlkit.vision.text.TextRecognition;
+import com.google.mlkit.vision.text.TextRecognizer;
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -86,7 +92,7 @@ public class FloatingTranslatorService extends Service {
     private String latestTranslation = "";
     private boolean isTranslationReady = false;
 
-    // NEW: Accumulator for Endless Scrolling
+    // Accumulator for Endless Scrolling
     private StringBuilder continuousOcrBuilder = new StringBuilder();
     private boolean isFirstChunk = true;
 
@@ -166,9 +172,8 @@ public class FloatingTranslatorService extends Service {
         super.onCreate();
         sInstance = this;
 
-        // --- FIX: Start Foreground Service to prevent app closing/Permission Lost ---
+        // FIX: Start Foreground Service to prevent app closing/Permission Lost
         startMyForeground();
-        // --------------------------------------------------------------------------
 
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
         mediaProjectionManager = (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
@@ -185,7 +190,7 @@ public class FloatingTranslatorService extends Service {
         setupCloseTarget();
     }
 
-    // --- NEW METHOD: Creates the Notification ---
+    // Creates the Notification to keep service alive
     private void startMyForeground() {
         String CHANNEL_ID = "bubble_translator_channel";
 
@@ -198,7 +203,6 @@ public class FloatingTranslatorService extends Service {
             ((NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE)).createNotificationChannel(channel);
         }
 
-        // Create an intent that opens the app when you click the notification
         Intent notificationIntent = new Intent(this, MainActivity.class);
         PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent, PendingIntent.FLAG_IMMUTABLE);
 
@@ -219,7 +223,6 @@ public class FloatingTranslatorService extends Service {
                     .build();
         }
 
-        // ID must be > 0
         startForeground(1337, notification);
     }
 
@@ -240,12 +243,10 @@ public class FloatingTranslatorService extends Service {
         closeRegionHeight = screenHeight / 5;
     }
 
-    // Helper to ask for permission again if it was lost
     private void requestPermissionRestart() {
         Toast.makeText(this, "Permission lost. Please allow again.", Toast.LENGTH_SHORT).show();
         Intent intent = new Intent(this, MainActivity.class);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        // We can add an extra here to tell MainActivity to auto-launch the permission dialog
         intent.putExtra("AUTO_REQUEST_PERMISSION", true);
         startActivity(intent);
     }
@@ -267,7 +268,6 @@ public class FloatingTranslatorService extends Service {
         }
     }
 
-    // Called by TwoLineOverlayService to pause/stop recording (but keep images in memory)
     public void stopBurstCapture() {
         isBurstMode = false;
         stopCapture(); 
@@ -316,7 +316,6 @@ public class FloatingTranslatorService extends Service {
                         image = reader.acquireLatestImage();
                         if (image != null) {
 
-                            // Throttling for Burst Mode
                             if (isBurstMode) {
                                 long currentTime = System.currentTimeMillis();
                                 if (currentTime - lastCaptureTime < CAPTURE_INTERVAL_MS) {
@@ -337,12 +336,10 @@ public class FloatingTranslatorService extends Service {
 
                             Bitmap capturedFrame;
                             if (isBurstMode) {
-                                // --- FIX: Reverted the aggressive cut to fix "No Text Found" ---
-                                // We capture the FULL screen here. We will handle the status bar 
-                                // smartly inside the processing loop instead.
+                                // Raw Capture (No Crop). We handle logic later to prevent "No Text Found"
                                 capturedFrame = fullBitmap;
                             } else {
-                                // Normal Single Shot Logic
+                                // Normal Single Shot Logic (Crop Immediately)
                                 int left = Math.max(0, cropRect.left);
                                 int top = Math.max(0, cropRect.top);
                                 int width = Math.min(cropRect.width(), fullBitmap.getWidth() - left);
@@ -395,7 +392,7 @@ public class FloatingTranslatorService extends Service {
         }
     }
 
-    // --- NEW: Processes a chunk of images in the background (Infinite Scroll) ---
+    // --- Processes a chunk of images in the background (Infinite Scroll) ---
     private void processIntermediateChunk() {
         final List<Bitmap> chunkToProcess = new ArrayList<>(capturedBitmaps);
         
@@ -407,15 +404,12 @@ public class FloatingTranslatorService extends Service {
         executor.execute(new Runnable() {
             @Override
             public void run() {
-                // --- SMART STITCHING FIX ---
-                // To avoid "4:22" repeating, we cut the Status Bar (Top 70px) ONLY for the stitcher.
-                // We do NOT cut the original images so single-sentence logic stays safe.
+                // Cut Status Bar (70px) to prevent repeats during scroll
                 List<Bitmap> bitmapsForStitching = new ArrayList<>();
                 int statusBarCut = 70; 
 
                 for (Bitmap original : chunkToProcess) {
                     if (original.getHeight() > statusBarCut) {
-                        // Create a temporary cropped version just for stitching
                         Bitmap cropped = Bitmap.createBitmap(original, 0, statusBarCut, original.getWidth(), original.getHeight() - statusBarCut);
                         bitmapsForStitching.add(cropped);
                     } else {
@@ -431,26 +425,12 @@ public class FloatingTranslatorService extends Service {
                 }
 
                 if (stitched != null) {
-                    // Crop Top if it's the very first chunk (Green Line)
-                    // Note: stitched image is already missing the top 70px status bar
-                    // So we must adjust coordinates
-                    int adjustedCropTop = 0;
-                    if (isFirstChunk && currentCropRect != null && currentCropRect.top > 0) {
-                         // Green Line Y - Status Bar Cut
-                         adjustedCropTop = Math.max(0, currentCropRect.top - statusBarCut);
-                         
-                         int height = stitched.getHeight() - adjustedCropTop;
-                         if (height > 0) {
-                             Bitmap cropped = Bitmap.createBitmap(stitched, 0, adjustedCropTop, stitched.getWidth(), height);
-                             performOcrSync(cropped);
-                         }
-                    } else {
-                        performOcrSync(stitched);
-                    }
+                    // Pass to ML Kit (No Filtering for intermediate chunks)
+                    performOcrWithFilter(stitched, -1, -1);
                     isFirstChunk = false;
                 }
                 
-                // Cleanup chunk bitmaps (Crucial for memory)
+                // Cleanup
                 for (Bitmap b : chunkToProcess) {
                     if (b != lastFrame) b.recycle(); 
                 }
@@ -466,28 +446,24 @@ public class FloatingTranslatorService extends Service {
 
     // --- FINAL Processing when User clicks STOP/COPY ---
     private void processTwoLineResult(Rect limitRect) {
-        // If we have any remaining frames, process them now
         final List<Bitmap> remainingFrames = new ArrayList<>(capturedBitmaps);
         capturedBitmaps.clear();
 
         executor.execute(new Runnable() {
             @Override
             public void run() {
-                // --- LOGIC SPLIT: Single Screen vs Scrolling ---
-                boolean isSingleScreen = (remainingFrames.size() <= 2 && continuousOcrBuilder.length() == 0);
+                // Determine Mode: Single Screen or End of Scroll?
+                boolean isSingleScreen = (remainingFrames.size() <= 2 && isFirstChunk);
                 
                 Bitmap stitched;
-                int statusBarCut = 0;
 
                 if (isSingleScreen) {
-                    // CASE 1: Single Sentence. Use ORIGINAL bitmaps. Do NOT cut status bar.
-                    // This ensures "No Text Found" is fixed for top-of-screen text.
+                    // Single Sentence Mode: Use RAW images. No status bar cuts.
                     stitched = ImageStitcher.stitchImages(remainingFrames);
-                    statusBarCut = 0; 
                 } else {
-                    // CASE 2: End of Scroll. Use SMART CROP logic (Cut 70px) to prevent repeats.
+                    // Scrolling Mode: Cut status bar.
                     List<Bitmap> bitmapsForStitching = new ArrayList<>();
-                    statusBarCut = 70; 
+                    int statusBarCut = 70; 
 
                     for (Bitmap original : remainingFrames) {
                         if (original.getHeight() > statusBarCut) {
@@ -498,7 +474,6 @@ public class FloatingTranslatorService extends Service {
                         }
                     }
                     stitched = ImageStitcher.stitchImages(bitmapsForStitching);
-                    // Cleanup
                     for (Bitmap b : bitmapsForStitching) {
                        if (b != null && !remainingFrames.contains(b)) b.recycle();
                     }
@@ -510,44 +485,16 @@ public class FloatingTranslatorService extends Service {
                 }
 
                 if (stitched != null) {
-                    int greenLineY = limitRect.top;
-                    int redLineY = limitRect.bottom;
-                    
-                    Bitmap finalCropped;
-                    
+                    // FIX: Use Coordinate Filtering instead of Bitmap Cropping for Single Screen
                     if (isSingleScreen) {
-                        // --- FIX FOR SINGLE SENTENCE / " | " ISSUE ---
-                        // Use strict Green Line Y. No status bar adjustments because we used original images.
-                        int cropHeight = redLineY - greenLineY;
-                        
-                        // Bounds Check
-                        if (greenLineY < 0) greenLineY = 0;
-                        if (greenLineY + cropHeight > stitched.getHeight()) {
-                            cropHeight = stitched.getHeight() - greenLineY;
-                        }
-
-                        if (cropHeight > 0) {
-                            finalCropped = Bitmap.createBitmap(stitched, 0, greenLineY, stitched.getWidth(), cropHeight);
-                        } else {
-                            finalCropped = stitched; 
-                        }
+                        // Pass the FULL stitched image + the Lines to ML Kit.
+                        // ML Kit will only read text inside the lines.
+                        performOcrWithFilter(stitched, limitRect.top, limitRect.bottom);
                     } else {
-                        // --- FIX FOR SCROLLING ---
-                        // The image is already shifted up by 70px.
-                        // We only need to crop the BOTTOM (Red Line).
-                        // Calculate where the Red Line is relative to this new shifted image.
-                        
-                        // Red Line Screen Pos - Status Bar Cut
-                        int relativeRedY = redLineY - statusBarCut;
-                        
-                        if (relativeRedY < stitched.getHeight()) {
-                             finalCropped = Bitmap.createBitmap(stitched, 0, 0, stitched.getWidth(), Math.max(1, relativeRedY));
-                        } else {
-                             finalCropped = stitched;
-                        }
+                        // For Multi-Screen, we assume the user wants everything scrolled.
+                        // We do not filter by Green/Red lines because stitching shifts coordinates.
+                        performOcrWithFilter(stitched, -1, -1);
                     }
-                    
-                    performOcrSync(finalCropped);
                 }
 
                 // Finalize: Send text to translation
@@ -568,64 +515,76 @@ public class FloatingTranslatorService extends Service {
         });
     }
 
-    // Helper for Background OCR (Appends to StringBuilder)
-    private void performOcrSync(Bitmap bitmap) {
+    // FIX: New Method using ML Kit with Coordinate Filtering
+    private void performOcrWithFilter(Bitmap bitmap, final int minY, final int maxY) {
         if (bitmap == null) return;
-        TextRecognizer recognizer = new TextRecognizer.Builder(getApplicationContext()).build();
-        if (recognizer.isOperational()) {
-            Frame frame = new Frame.Builder().setBitmap(bitmap).build();
-            SparseArray<TextBlock> items = recognizer.detect(frame);
+        
+        InputImage image = InputImage.fromBitmap(bitmap, 0);
+        TextRecognizer recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
+
+        try {
+            // Force Synchronous execution using Tasks.await to keep text in order
+            Text visionText = Tasks.await(recognizer.process(image));
+            
             StringBuilder sb = new StringBuilder();
-            for (int i = 0; i < items.size(); ++i) {
-                TextBlock item = items.valueAt(i);
-                sb.append(item.getValue()).append("\n");
+            
+            // Loop through all text blocks
+            for (Text.TextBlock block : visionText.getTextBlocks()) {
+                for (Text.Line line : block.getLines()) {
+                    Rect box = line.getBoundingBox();
+                    if (box != null) {
+                        // FILTER LOGIC:
+                        // If minY == -1, it means "Read Everything" (Scroll Mode / Normal Bubble)
+                        // If minY > 0, check if the text is strictly between lines (Single Screen Mode)
+                        boolean isInside = (minY == -1) || (box.top >= minY && box.bottom <= maxY);
+                        
+                        if (isInside) {
+                            sb.append(line.getText()).append(" ");
+                        }
+                    }
+                }
+                sb.append("\n");
             }
-            
-            // FIX: Replace New Lines with Spaces for better translation
-            String text = sb.toString().replace("\n", " ");
-            
+
+            // Append result to the global builder
             synchronized (continuousOcrBuilder) {
-                continuousOcrBuilder.append(text).append(" ");
+                continuousOcrBuilder.append(sb.toString().replace("\n", " ")).append(" ");
             }
+
+        } catch (ExecutionException | InterruptedException e) {
+            e.printStackTrace();
         }
-        recognizer.release();
     }
 
-    // Standard OCR (Main Thread / Single Shot)
+    // FIX: Updated Normal Bubble OCR to use ML Kit (No Filtering)
     private void performOcr(Bitmap bitmap) {
-        TextRecognizer recognizer = new TextRecognizer.Builder(getApplicationContext()).build();
-        if (!recognizer.isOperational()) {
-            Toast.makeText(this, "OCR dependencies not ready", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        Frame frame = new Frame.Builder().setBitmap(bitmap).build();
-        SparseArray<TextBlock> items = recognizer.detect(frame);
-
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < items.size(); ++i) {
-            TextBlock item = items.valueAt(i);
-            sb.append(item.getValue()).append("\n");
-        }
-
-        // FIX: Replace New Lines with Spaces
-        String extractedText = sb.toString().trim().replace("\n", " ");
-
-        if (!extractedText.isEmpty()) {
-            latestOcrText = extractedText;
-
-            if (shouldCopyToClipboard) {
-                copyToClipboard(latestOcrText);
-                shouldCopyToClipboard = false; 
-            }
-
-            translateText(latestOcrText);
-        } else {
-            Toast.makeText(FloatingTranslatorService.this, "No text found", Toast.LENGTH_SHORT).show();
-        }
-        recognizer.release();
-
-        capturedBitmaps.clear();
+        // Just call the filtered version with "-1" to indicate "Read Whole Image"
+        // Since the image is already cropped by the Normal Bubble logic, we read it all.
+        
+        // Note: performOcr is called on Main Thread usually, but we need background for Tasks.await
+        executor.execute(() -> {
+            performOcrWithFilter(bitmap, -1, -1);
+            
+            // Trigger UI update
+            String extractedText = continuousOcrBuilder.toString().trim();
+            
+            handler.post(() -> {
+                 if (!extractedText.isEmpty()) {
+                    latestOcrText = extractedText;
+                    if (shouldCopyToClipboard) {
+                        copyToClipboard(latestOcrText);
+                        shouldCopyToClipboard = false; 
+                    }
+                    translateText(latestOcrText);
+                    // Clear for next time
+                    continuousOcrBuilder.setLength(0);
+                } else {
+                    Toast.makeText(FloatingTranslatorService.this, "No text found", Toast.LENGTH_SHORT).show();
+                }
+            });
+            
+            capturedBitmaps.clear();
+        });
     }
 
     private void copyToClipboard(String text) {
