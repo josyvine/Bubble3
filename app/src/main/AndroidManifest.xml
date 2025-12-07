@@ -9,6 +9,9 @@
     <uses-permission android:name="android.permission.BIND_INPUT_METHOD" />
     <!-- Permission to act as an Accessibility Service -->
     <uses-permission android:name="android.permission.BIND_ACCESSIBILITY_SERVICE" />
+    
+    <!-- FIX: Added Media Projection Permission required for Android 14+ -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
 
     <application
         android:name=".MyApplication"
@@ -52,10 +55,12 @@
             android:label="Debug Mode"
             android:theme="@style/Theme.AppCompat.Light" />
 
+        <!-- FIX: Added foregroundServiceType for Screen Capture support on Android 14 -->
         <service
             android:name=".FloatingTranslatorService"
             android:enabled="true"
-            android:exported="false" />
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
 
         <!-- Accessibility Service for Auto-Scrolling -->
         <service
