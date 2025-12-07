@@ -6,7 +6,7 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
-import android.content.SharedPreferences; // FIX: Added missing import
+import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
@@ -25,7 +25,7 @@ import android.util.SparseArray;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.MenuItem;
-import android.view.MotionEvent; // FIX: Added missing import
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.AdapterView;
@@ -122,6 +122,16 @@ public class FloatingTranslatorService extends Service {
                 Intent data = intent.getParcelableExtra("data");
                 if (mediaProjectionManager != null && resultCode == Activity.RESULT_OK && data != null) {
                     mediaProjection = mediaProjectionManager.getMediaProjection(resultCode, data);
+                    
+                    // Listener to handle if the projection stops unexpectedly
+                    mediaProjection.registerCallback(new MediaProjection.Callback() {
+                        @Override
+                        public void onStop() {
+                            super.onStop();
+                            mediaProjection = null;
+                            if (imageReader != null) imageReader.close();
+                        }
+                    }, handler);
                 }
             }
 
@@ -180,6 +190,16 @@ public class FloatingTranslatorService extends Service {
         closeTargetView.setVisibility(View.GONE);
         closeRegionHeight = screenHeight / 5;
     }
+    
+    // Helper to ask for permission again if it was lost
+    private void requestPermissionRestart() {
+        Toast.makeText(this, "Permission lost. Please allow again.", Toast.LENGTH_SHORT).show();
+        Intent intent = new Intent(this, MainActivity.class);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        // We can add an extra here to tell MainActivity to auto-launch the permission dialog
+        intent.putExtra("AUTO_REQUEST_PERMISSION", true);
+        startActivity(intent);
+    }
 
     // Called by TwoLineOverlayService to start recording
     public void startBurstCapture() {
@@ -194,7 +214,7 @@ public class FloatingTranslatorService extends Service {
                 startCapture(currentCropRect);
             }
         } else {
-            Toast.makeText(this, "Permission missing. Restart app.", Toast.LENGTH_SHORT).show();
+            requestPermissionRestart();
         }
     }
 
@@ -218,7 +238,7 @@ public class FloatingTranslatorService extends Service {
             capturedBitmaps.clear();
             startCapture(selectedRect);
         } else {
-            Toast.makeText(this, "Permission not available.", Toast.LENGTH_SHORT).show();
+            requestPermissionRestart();
         }
     }
 
@@ -229,10 +249,16 @@ public class FloatingTranslatorService extends Service {
 
         imageReader = ImageReader.newInstance(screenWidth, screenHeight, PixelFormat.RGBA_8888, 2);
 
-        virtualDisplay = mediaProjection.createVirtualDisplay("ScreenCapture",
-                                                              screenWidth, screenHeight, screenDensity,
-                                                              DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                                                              imageReader.getSurface(), null, null);
+        try {
+            virtualDisplay = mediaProjection.createVirtualDisplay("ScreenCapture",
+                                                                  screenWidth, screenHeight, screenDensity,
+                                                                  DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                                                                  imageReader.getSurface(), null, null);
+        } catch (Exception e) {
+            e.printStackTrace();
+            requestPermissionRestart();
+            return;
+        }
 
         imageReader.setOnImageAvailableListener(new ImageReader.OnImageAvailableListener() {
                 @Override
@@ -343,14 +369,29 @@ public class FloatingTranslatorService extends Service {
             int redLineY = limitRect.bottom;
             
             // Calculate height from top of stitched image (green line) to relative bottom (red line)
-            int pixelsFromBottomToSkip = screenHeight - redLineY;
-            int finalHeight = longBitmap.getHeight() - greenLineY - pixelsFromBottomToSkip;
+            // Note: Since longBitmap grows downwards, the "red line" (bottom crop) is technically
+            // offset from the very bottom of the last captured frame.
             
-            // Safety check
-            if (finalHeight <= 0) finalHeight = 100;
-            if (greenLineY + finalHeight > longBitmap.getHeight()) finalHeight = longBitmap.getHeight() - greenLineY;
+            // However, a simpler approach for the stitched vertical image:
+            // The green line is an absolute Y from the top of the FIRST screen.
+            // The red line is an absolute Y from the top of the LAST screen.
+            
+            // Since we stitched them, we can just crop the very top (green line) 
+            // and the very bottom (screenHeight - redLine).
+            
+            int cutFromTop = greenLineY;
+            int cutFromBottom = screenHeight - redLineY;
+            
+            int finalHeight = longBitmap.getHeight() - cutFromTop - cutFromBottom;
+            
+            // Safety checks
+            if (finalHeight <= 50) {
+                // Fallback if math goes wrong (e.g. lines overlapped)
+                performOcr(longBitmap); 
+                return;
+            }
 
-            Bitmap finalCropped = Bitmap.createBitmap(longBitmap, 0, greenLineY, longBitmap.getWidth(), finalHeight);
+            Bitmap finalCropped = Bitmap.createBitmap(longBitmap, 0, cutFromTop, longBitmap.getWidth(), finalHeight);
             
             performOcr(finalCropped);
 
