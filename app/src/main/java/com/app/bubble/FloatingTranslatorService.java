@@ -1,4 +1,3 @@
-
 package com.app.bubble;
 
 import android.app.Activity;
@@ -338,17 +337,10 @@ public class FloatingTranslatorService extends Service {
 
                             Bitmap capturedFrame;
                             if (isBurstMode) {
-                                // --- FIX: "4:22" Status Bar Issue ---
-                                // We MUST crop the top ~120px (Status Bar + Header) from every frame.
-                                // If we don't, the static clock/battery confuses the stitcher.
-                                int statusBarCut = 120; // Safe margin for status bar + action bar
-                                
-                                if (fullBitmap.getHeight() > statusBarCut) {
-                                    capturedFrame = Bitmap.createBitmap(fullBitmap, 0, statusBarCut, fullBitmap.getWidth(), fullBitmap.getHeight() - statusBarCut);
-                                    fullBitmap.recycle(); // Clean up the full one immediately
-                                } else {
-                                    capturedFrame = fullBitmap;
-                                }
+                                // --- FIX: Reverted the aggressive cut to fix "No Text Found" ---
+                                // We capture the FULL screen here. We will handle the status bar 
+                                // smartly inside the processing loop instead.
+                                capturedFrame = fullBitmap;
                             } else {
                                 // Normal Single Shot Logic
                                 int left = Math.max(0, cropRect.left);
@@ -415,12 +407,49 @@ public class FloatingTranslatorService extends Service {
         executor.execute(new Runnable() {
             @Override
             public void run() {
-                Bitmap stitched = ImageStitcher.stitchImages(chunkToProcess);
+                // --- SMART STITCHING FIX ---
+                // To avoid "4:22" repeating, we cut the Status Bar (Top 70px) ONLY for the stitcher.
+                // We do NOT cut the original images so single-sentence logic stays safe.
+                List<Bitmap> bitmapsForStitching = new ArrayList<>();
+                int statusBarCut = 70; 
+
+                for (Bitmap original : chunkToProcess) {
+                    if (original.getHeight() > statusBarCut) {
+                        // Create a temporary cropped version just for stitching
+                        Bitmap cropped = Bitmap.createBitmap(original, 0, statusBarCut, original.getWidth(), original.getHeight() - statusBarCut);
+                        bitmapsForStitching.add(cropped);
+                    } else {
+                        bitmapsForStitching.add(original);
+                    }
+                }
+
+                Bitmap stitched = ImageStitcher.stitchImages(bitmapsForStitching);
+                
+                // Cleanup temp bitmaps
+                for (Bitmap b : bitmapsForStitching) {
+                   if (b != null && !chunkToProcess.contains(b)) b.recycle();
+                }
+
                 if (stitched != null) {
-                    // For chunks, we don't need complex cropping anymore because we cropped the status bar at source.
-                    performOcrSync(stitched);
+                    // Crop Top if it's the very first chunk (Green Line)
+                    // Note: stitched image is already missing the top 70px status bar
+                    // So we must adjust coordinates
+                    int adjustedCropTop = 0;
+                    if (isFirstChunk && currentCropRect != null && currentCropRect.top > 0) {
+                         // Green Line Y - Status Bar Cut
+                         adjustedCropTop = Math.max(0, currentCropRect.top - statusBarCut);
+                         
+                         int height = stitched.getHeight() - adjustedCropTop;
+                         if (height > 0) {
+                             Bitmap cropped = Bitmap.createBitmap(stitched, 0, adjustedCropTop, stitched.getWidth(), height);
+                             performOcrSync(cropped);
+                         }
+                    } else {
+                        performOcrSync(stitched);
+                    }
                     isFirstChunk = false;
                 }
+                
                 // Cleanup chunk bitmaps (Crucial for memory)
                 for (Bitmap b : chunkToProcess) {
                     if (b != lastFrame) b.recycle(); 
@@ -444,7 +473,36 @@ public class FloatingTranslatorService extends Service {
         executor.execute(new Runnable() {
             @Override
             public void run() {
-                Bitmap stitched = ImageStitcher.stitchImages(remainingFrames);
+                // --- LOGIC SPLIT: Single Screen vs Scrolling ---
+                boolean isSingleScreen = (remainingFrames.size() <= 2 && continuousOcrBuilder.length() == 0);
+                
+                Bitmap stitched;
+                int statusBarCut = 0;
+
+                if (isSingleScreen) {
+                    // CASE 1: Single Sentence. Use ORIGINAL bitmaps. Do NOT cut status bar.
+                    // This ensures "No Text Found" is fixed for top-of-screen text.
+                    stitched = ImageStitcher.stitchImages(remainingFrames);
+                    statusBarCut = 0; 
+                } else {
+                    // CASE 2: End of Scroll. Use SMART CROP logic (Cut 70px) to prevent repeats.
+                    List<Bitmap> bitmapsForStitching = new ArrayList<>();
+                    statusBarCut = 70; 
+
+                    for (Bitmap original : remainingFrames) {
+                        if (original.getHeight() > statusBarCut) {
+                            Bitmap cropped = Bitmap.createBitmap(original, 0, statusBarCut, original.getWidth(), original.getHeight() - statusBarCut);
+                            bitmapsForStitching.add(cropped);
+                        } else {
+                            bitmapsForStitching.add(original);
+                        }
+                    }
+                    stitched = ImageStitcher.stitchImages(bitmapsForStitching);
+                    // Cleanup
+                    for (Bitmap b : bitmapsForStitching) {
+                       if (b != null && !remainingFrames.contains(b)) b.recycle();
+                    }
+                }
                 
                 if (stitched == null && continuousOcrBuilder.length() == 0) {
                     handler.post(() -> Toast.makeText(FloatingTranslatorService.this, "Capture failed.", Toast.LENGTH_SHORT).show());
@@ -455,45 +513,35 @@ public class FloatingTranslatorService extends Service {
                     int greenLineY = limitRect.top;
                     int redLineY = limitRect.bottom;
                     
-                    // --- FIX FOR SINGLE SENTENCE / " | " ISSUE ---
-                    // If height is small (Single Screen capture), crop exactly between lines.
-                    // If height is large (Scrolled capture), use the scroll cropping logic.
-                    
                     Bitmap finalCropped;
-                    if (stitched.getHeight() < screenHeight * 1.2) {
-                        // Logic for Short Image (Single Sentence) -> Exact Crop
-                        // We clamp coordinate to avoid crashing if image is slightly smaller
-                        int singleScreenHeight = redLineY - greenLineY;
-                        int cropHeight = Math.min(singleScreenHeight, stitched.getHeight());
-                        if (cropHeight <= 0) cropHeight = 50; // Safety
+                    
+                    if (isSingleScreen) {
+                        // --- FIX FOR SINGLE SENTENCE / " | " ISSUE ---
+                        // Use strict Green Line Y. No status bar adjustments because we used original images.
+                        int cropHeight = redLineY - greenLineY;
                         
-                        // FIX: Trust Green Line, but account for the Status Bar cut we did earlier?
-                        // Actually, if we cut status bar (120px) from source, the stitched image is shifted up by 120px.
-                        // So we need to subtract 120 from the GreenLineY coordinate to match the image.
-                        int statusBarCut = 120;
-                        int cropY = greenLineY - statusBarCut; 
-
-                        // Simple safety check 
-                        if (cropY < 0) cropY = 0;
-                        if (cropY + cropHeight > stitched.getHeight()) {
-                            cropHeight = stitched.getHeight() - cropY;
+                        // Bounds Check
+                        if (greenLineY < 0) greenLineY = 0;
+                        if (greenLineY + cropHeight > stitched.getHeight()) {
+                            cropHeight = stitched.getHeight() - greenLineY;
                         }
 
                         if (cropHeight > 0) {
-                            finalCropped = Bitmap.createBitmap(stitched, 0, cropY, stitched.getWidth(), cropHeight);
+                            finalCropped = Bitmap.createBitmap(stitched, 0, greenLineY, stitched.getWidth(), cropHeight);
                         } else {
                             finalCropped = stitched; 
                         }
-                        
                     } else {
-                        // Logic for Long Image (Endless Scroll)
-                        // The top is already cropped by our 120px cut in loop.
-                        // We just need to cut the bottom (Below Red Line).
-                        int cutFromBottom = screenHeight - redLineY;
-                        int newHeight = stitched.getHeight() - cutFromBottom;
+                        // --- FIX FOR SCROLLING ---
+                        // The image is already shifted up by 70px.
+                        // We only need to crop the BOTTOM (Red Line).
+                        // Calculate where the Red Line is relative to this new shifted image.
                         
-                        if (newHeight > 0) {
-                             finalCropped = Bitmap.createBitmap(stitched, 0, 0, stitched.getWidth(), newHeight);
+                        // Red Line Screen Pos - Status Bar Cut
+                        int relativeRedY = redLineY - statusBarCut;
+                        
+                        if (relativeRedY < stitched.getHeight()) {
+                             finalCropped = Bitmap.createBitmap(stitched, 0, 0, stitched.getWidth(), Math.max(1, relativeRedY));
                         } else {
                              finalCropped = stitched;
                         }
