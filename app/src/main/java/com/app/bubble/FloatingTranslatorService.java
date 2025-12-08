@@ -113,7 +113,9 @@ public class FloatingTranslatorService extends Service {
     private List<Bitmap> capturedBitmaps = new ArrayList<>();
     private boolean isBurstMode = false;
     private long lastCaptureTime = 0;
-    private static final long CAPTURE_INTERVAL_MS = 150; 
+    
+    // FIX: Increased interval to 400ms to reduce Duplicate Text Glitches
+    private static final long CAPTURE_INTERVAL_MS = 400; 
 
     // Logic flags
     private boolean shouldCopyToClipboard = false;
@@ -517,15 +519,25 @@ public class FloatingTranslatorService extends Service {
                     Rect box = line.getBoundingBox();
                     if (box != null) {
                         int centerY = box.centerY();
+                        String lineText = line.getText();
+
+                        // FIX: Filter out UI Garbage Text ("Bubble", "Stop Scroll", etc.)
+                        if (lineText.contains("Bubble") || 
+                            lineText.contains("STOP SCROLL") || 
+                            lineText.contains("Place Red Line") ||
+                            lineText.contains("Scroll to end") ||
+                            lineText.contains("deleted this message")) {
+                            continue; // Skip this line
+                        }
                         
                         // Add to debug log
-                        debugRawLog.append("Y=").append(centerY).append(": ").append(line.getText()).append("\n");
+                        debugRawLog.append("Y=").append(centerY).append(": ").append(lineText).append("\n");
 
                         // FILTER LOGIC: Check Center Point (Forgiving Logic)
                         boolean isInside = (minY == -1) || (centerY >= minY && centerY <= maxY);
                         
                         if (isInside) {
-                            sb.append(line.getText()).append(" ");
+                            sb.append(lineText).append(" ");
                         }
                     }
                 }
@@ -541,12 +553,16 @@ public class FloatingTranslatorService extends Service {
             // === LAUNCH IN-APP DEBUG SCREEN ===
             // Only launch if this is the FINAL result (isFinal == true)
             if (isFinal) {
+                String finalText = continuousOcrBuilder.toString().trim();
+
+                // FIX: Actually Copy to Clipboard before showing Debug
+                copyToClipboard(finalText);
                 
                 // Populate Static Variables in DebugActivity
                 DebugActivity.sLastBitmap = bitmap;
                 DebugActivity.sLastRect = new Rect(0, minY, bitmap.getWidth(), maxY);
                 DebugActivity.sRawText = debugRawLog.toString();
-                DebugActivity.sFilteredText = continuousOcrBuilder.toString().trim();
+                DebugActivity.sFilteredText = finalText;
                 DebugActivity.sErrorLog = "Success. Check Red/Green Lines.";
 
                 // Open the Activity
@@ -587,6 +603,8 @@ public class FloatingTranslatorService extends Service {
         if (clipboard != null) {
             ClipData clip = ClipData.newPlainText("Bubble Copy", text);
             clipboard.setPrimaryClip(clip);
+            // Optional: Show a toast so user knows it worked
+            handler.post(() -> Toast.makeText(getApplicationContext(), "Copied to Clipboard!", Toast.LENGTH_SHORT).show());
         }
     }
 
