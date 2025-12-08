@@ -1,4 +1,3 @@
-
 package com.app.bubble;
 
 import android.app.Activity;
@@ -268,9 +267,6 @@ public class FloatingTranslatorService extends Service {
     }
 
     public void stopBurstCapture() {
-        // FIX: Do NOT set isBurstMode = false here. 
-        // If we do, pending frames will trigger "Single Shot" logic and open Debug Screen early.
-        // We let isBurstMode stay true, and only stop the camera.
         stopCapture(); 
     }
 
@@ -282,7 +278,7 @@ public class FloatingTranslatorService extends Service {
         if (floatingBubbleView != null) floatingBubbleView.setVisibility(View.VISIBLE);
 
         if (mediaProjection != null) {
-            // FIX: Explicitly set Single Shot mode here before starting capture
+            // Explicitly set Single Shot mode here before starting capture
             isBurstMode = false;
             this.currentCropRect = selectedRect;
             capturedBitmaps.clear();
@@ -365,9 +361,7 @@ public class FloatingTranslatorService extends Service {
                                 processIntermediateChunk();
                             }
 
-                            // FIX: Only trigger single shot if we are absolutely sure it's not burst mode.
-                            // Since we removed 'isBurstMode = false' from stopBurstCapture, this block
-                            // will NOT run when you click "Stop Scroll", preventing the bug.
+                            // Only trigger single shot if we are absolutely sure it's not burst mode.
                             if (!isBurstMode) {
                                 stopCapture();
                                 processSingleShotResult();
@@ -504,9 +498,9 @@ public class FloatingTranslatorService extends Service {
         });
     }
 
-    // FIX: 'isFinal' boolean controls Debug Screen launch
+    // FIX: 'isFinal' boolean controls Debug Screen launch AND Error suppression
     private void performOcrWithFilter(Bitmap bitmap, final int minY, final int maxY, boolean isFinal) {
-        if (bitmap == null) return;
+        if (bitmap == null || bitmap.isRecycled()) return;
         
         InputImage image = InputImage.fromBitmap(bitmap, 0);
         TextRecognizer recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
@@ -566,13 +560,16 @@ public class FloatingTranslatorService extends Service {
 
         } catch (Exception e) {
             e.printStackTrace();
-            // Launch Debug Screen on Error
-            DebugActivity.sErrorLog = "CRASH: " + e.getMessage();
-            DebugActivity.sLastBitmap = bitmap; 
-            
-            Intent debugIntent = new Intent(this, DebugActivity.class);
-            debugIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            startActivity(debugIntent);
+            // FIX: If this is just a background chunk error, IGNORE IT.
+            // Only show the crash screen if it prevents the user from getting their final copy.
+            if (isFinal) {
+                DebugActivity.sErrorLog = "CRASH: " + e.getMessage();
+                DebugActivity.sLastBitmap = bitmap; 
+                
+                Intent debugIntent = new Intent(this, DebugActivity.class);
+                debugIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(debugIntent);
+            }
         }
     }
 
