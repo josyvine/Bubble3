@@ -1,3 +1,4 @@
+
 package com.app.bubble;
 
 import android.app.Activity;
@@ -44,7 +45,7 @@ import com.google.android.gms.ads.AdRequest;
 import com.google.android.gms.ads.AdView;
 import com.google.android.gms.ads.MobileAds;
 
-// FIX: ML Kit Imports
+// ML Kit Imports
 import com.google.android.gms.tasks.Tasks;
 import com.google.mlkit.vision.common.InputImage;
 import com.google.mlkit.vision.text.Text;
@@ -420,8 +421,9 @@ public class FloatingTranslatorService extends Service {
                 }
 
                 if (stitched != null) {
-                    // Pass to ML Kit (No Filtering for intermediate chunks)
-                    performOcrWithFilter(stitched, -1, -1);
+                    // FIX: Pass 'false' to indicate this is BACKGROUND processing. 
+                    // Do NOT show debug screen yet.
+                    performOcrWithFilter(stitched, -1, -1, false);
                     isFirstChunk = false;
                 }
                 
@@ -482,22 +484,22 @@ public class FloatingTranslatorService extends Service {
                 if (stitched != null) {
                     // Use Coordinate Filtering
                     if (isSingleScreen) {
-                        performOcrWithFilter(stitched, limitRect.top, limitRect.bottom);
+                        // FIX: Pass 'true' because this IS the final user action. Show Debug.
+                        performOcrWithFilter(stitched, limitRect.top, limitRect.bottom, true);
                     } else {
-                        // FIX: Adjust coordinates for the scrolling case (Status Bar removed)
+                        // Scrolling Logic
                         int statusBarCut = 70; 
-                        // Shift the Red Line up by 70px to match the cropped image
                         int adjustedBottom = Math.max(0, limitRect.bottom - statusBarCut);
-                        // Use 0 as start (top of stitched image) so filter activates
-                        performOcrWithFilter(stitched, 0, adjustedBottom);
+                        // FIX: Pass 'true' because this IS the final user action. Show Debug.
+                        performOcrWithFilter(stitched, 0, adjustedBottom, true);
                     }
                 }
             }
         });
     }
 
-    // FIX: Method using ML Kit with In-App Debugging
-    private void performOcrWithFilter(Bitmap bitmap, final int minY, final int maxY) {
+    // FIX: Added 'isFinal' boolean to control Debug Screen launch
+    private void performOcrWithFilter(Bitmap bitmap, final int minY, final int maxY, boolean isFinal) {
         if (bitmap == null) return;
         
         InputImage image = InputImage.fromBitmap(bitmap, 0);
@@ -537,8 +539,9 @@ public class FloatingTranslatorService extends Service {
             }
 
             // === LAUNCH IN-APP DEBUG SCREEN ===
-            // This runs if it's a Single Screen or the End of a Scroll
-            if (minY != -1 || !isFirstChunk) {
+            // FIX: Only launch if this is the FINAL result (isFinal == true)
+            // This prevents the screen from popping up while scrolling background chunks.
+            if (isFinal) {
                 
                 // Populate Static Variables in DebugActivity
                 DebugActivity.sLastBitmap = bitmap;
@@ -553,7 +556,6 @@ public class FloatingTranslatorService extends Service {
                 startActivity(debugIntent);
                 
                 // STOP HERE. Do not show the translation popup. 
-                // You will see the result in the Debug Screen.
                 return;
             }
 
@@ -561,7 +563,7 @@ public class FloatingTranslatorService extends Service {
             e.printStackTrace();
             // Launch Debug Screen on Error
             DebugActivity.sErrorLog = "CRASH: " + e.getMessage();
-            DebugActivity.sLastBitmap = bitmap; // Show the image that caused the crash
+            DebugActivity.sLastBitmap = bitmap; 
             
             Intent debugIntent = new Intent(this, DebugActivity.class);
             debugIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -569,11 +571,13 @@ public class FloatingTranslatorService extends Service {
         }
     }
 
-    // FIX: Updated Normal Bubble OCR to use ML Kit (No Filtering)
+    // FIX: Updated Normal Bubble OCR Wrapper
     private void performOcr(Bitmap bitmap) {
         executor.execute(() -> {
-            // Use -1 to read everything (Normal Bubble is already cropped)
-            performOcrWithFilter(bitmap, -1, -1);
+            // Normal Bubble is single shot, so we consider it 'Final' if we want debug there too.
+            // But usually, Two-Line is the one needing debug. 
+            // We pass 'true' here just in case you use debug mode on normal bubbles too.
+            performOcrWithFilter(bitmap, -1, -1, true);
         });
     }
 
@@ -588,7 +592,6 @@ public class FloatingTranslatorService extends Service {
 
     private void translateText(final String text) {
         // In Debug Mode, we don't translate automatically. 
-        // We look at the Debug Screen first.
     }
 
     @Override
