@@ -71,7 +71,6 @@ public class BubbleKeyboardService extends InputMethodService implements Keyboar
 
         // 2. Add Candidate View (Predictions) - Top
         // FIX: Use 'mainLayout, false' to respect the 45dp height from XML. 
-        // Using 'null' was causing it to stretch to full screen.
         candidateView = inflater.inflate(R.layout.candidate_view, mainLayout, false);
         candidateContainer = candidateView.findViewById(R.id.candidate_container);
         
@@ -166,7 +165,7 @@ public class BubbleKeyboardService extends InputMethodService implements Keyboar
                 break;
 
             case Keyboard.KEYCODE_DONE: // -4 (Enter)
-                // Learn the word before sending enter (Issue #2)
+                // Learn the word before sending enter
                 PredictionEngine.getInstance(this).learnWord(currentWord.toString());
                 currentWord.setLength(0); // Reset
                 updateCandidates("");
@@ -199,7 +198,7 @@ public class BubbleKeyboardService extends InputMethodService implements Keyboar
                 // FIX Issue #3: Only type space if we didn't just trigger the Long Press menu
                 if (!isSpaceLongPressed) {
                     ic.commitText(" ", 1);
-                    // Learn the word (Issue #2)
+                    // Learn the word
                     PredictionEngine.getInstance(this).learnWord(currentWord.toString());
                     currentWord.setLength(0); // Reset word tracking
                     updateCandidates("");
@@ -213,11 +212,13 @@ public class BubbleKeyboardService extends InputMethodService implements Keyboar
                 }
                 ic.commitText(String.valueOf(code), 1);
                 
-                // Track typing for prediction (Issue #2)
+                // Track typing for prediction
                 if (Character.isLetterOrDigit(code)) {
                     currentWord.append(code);
                     updateCandidates(currentWord.toString());
                 } else {
+                    // Punctuation usually ends a word
+                    PredictionEngine.getInstance(this).learnWord(currentWord.toString());
                     currentWord.setLength(0);
                     updateCandidates("");
                 }
@@ -249,9 +250,6 @@ public class BubbleKeyboardService extends InputMethodService implements Keyboar
             kv.setVisibility(View.GONE);
             candidateView.setVisibility(View.GONE);
             emojiPaletteView.setVisibility(View.VISIBLE);
-            
-            // FIX Issue #5: Ensure layout params match keyboard height (approx 250dp)
-            // This is also handled in XML, but we reset visibility here.
             isEmojiVisible = true;
         } else {
             // Show Keyboard, Hide Emojis
@@ -292,7 +290,6 @@ public class BubbleKeyboardService extends InputMethodService implements Keyboar
                         @Override
                         public void onClick(View v) {
                             getCurrentInputConnection().commitText(clip, 1);
-                            // Optional: switch back to predictions after paste
                             isClipboardVisible = false;
                             updateCandidates(currentWord.toString());
                         }
@@ -337,12 +334,11 @@ public class BubbleKeyboardService extends InputMethodService implements Keyboar
         
         candidateContainer.removeAllViews();
         
-        // FIX Issue #2: Use Prediction Engine
         List<String> suggestions = PredictionEngine.getInstance(this).getSuggestions(wordBeingTyped);
 
-        // If no suggestions (or empty word), maybe show punctuation or common words
+        // If no suggestions (or empty word), get top frequent words
         if (suggestions.isEmpty() && wordBeingTyped.isEmpty()) {
-            suggestions = PredictionEngine.getInstance(this).getSuggestions(""); // Get top frequent words
+            suggestions = PredictionEngine.getInstance(this).getSuggestions(""); 
         }
 
         for (final String word : suggestions) {
@@ -355,11 +351,21 @@ public class BubbleKeyboardService extends InputMethodService implements Keyboar
             tv.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
-                    getCurrentInputConnection().commitText(word + " ", 1);
-                    // Learn this usage (boost frequency)
-                    PredictionEngine.getInstance(BubbleKeyboardService.this).learnWord(word);
-                    currentWord.setLength(0);
-                    updateCandidates("");
+                    InputConnection ic = getCurrentInputConnection();
+                    if (ic != null) {
+                        // FIX: Delete the partial prefix BEFORE pasting the full word
+                        // This prevents "lo" + "love" = "lolove"
+                        if (currentWord.length() > 0) {
+                            ic.deleteSurroundingText(currentWord.length(), 0);
+                        }
+                        
+                        ic.commitText(word + " ", 1);
+                        
+                        // Learn this usage
+                        PredictionEngine.getInstance(BubbleKeyboardService.this).learnWord(word);
+                        currentWord.setLength(0);
+                        updateCandidates("");
+                    }
                 }
             });
             
