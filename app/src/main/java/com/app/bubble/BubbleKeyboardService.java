@@ -1,8 +1,9 @@
 package com.app.bubble;
 
 import android.content.Context;
+import android.content.Intent;
 import android.inputmethodservice.InputMethodService;
-import android.inputmethodservice.Keyboard; 
+import android.inputmethodservice.Keyboard;
 import android.inputmethodservice.KeyboardView;
 import android.os.Handler;
 import android.os.Looper;
@@ -13,11 +14,10 @@ import android.view.inputmethod.InputConnection;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import android.widget.Toast;
 
 /**
  * The core Service handling the Modern Keyboard logic.
- * Manages Switching layers, Predictions, and Emoji interactions.
+ * Manages Switching layers, Predictions, Emoji interactions, and the Copy Tool trigger.
  */
 public class BubbleKeyboardService extends InputMethodService implements KeyboardView.OnKeyboardActionListener {
 
@@ -36,10 +36,10 @@ public class BubbleKeyboardService extends InputMethodService implements Keyboar
     private boolean isCaps = false;
     private boolean isEmojiVisible = false;
 
-    // Long Press Logic for Space Key
+    // Long Press Logic for Space Key (Switching Keyboards)
     private Handler longPressHandler = new Handler(Looper.getMainLooper());
     private boolean isSpaceLongPressed = false;
-    private static final int LONG_PRESS_DELAY = 500; // 500ms for long press
+    private static final int LONG_PRESS_DELAY = 500; // 500ms hold time
 
     private Runnable spaceLongPressRunnable = new Runnable() {
         @Override
@@ -67,8 +67,7 @@ public class BubbleKeyboardService extends InputMethodService implements Keyboar
         mainLayout.addView(candidateView);
 
         // 3. Add Keyboard View - Middle
-        // Note: We use a generic layout that contains the KeyboardView
-        // Ensure you have a layout_real_keyboard.xml or create the view programmatically
+        // We inflate layout_real_keyboard which must contain the KeyBackground attribute for visual feedback
         kv = (KeyboardView) inflater.inflate(R.layout.layout_real_keyboard, null);
         
         // Load Layouts
@@ -77,7 +76,7 @@ public class BubbleKeyboardService extends InputMethodService implements Keyboar
         
         kv.setKeyboard(keyboardQwerty);
         kv.setOnKeyboardActionListener(this);
-        kv.setPreviewEnabled(false); // Disable the popup character preview (modern look)
+        kv.setPreviewEnabled(false); // Disable popup preview for modern look
         mainLayout.addView(kv);
 
         // 4. Add Emoji Palette - Hidden by default
@@ -92,7 +91,7 @@ public class BubbleKeyboardService extends InputMethodService implements Keyboar
             }
         });
         
-        // Setup Emoji Palette Buttons
+        // Setup Emoji Palette Buttons (Back/Delete)
         setupEmojiControlButtons();
         
         mainLayout.addView(emojiPaletteView);
@@ -160,8 +159,17 @@ public class BubbleKeyboardService extends InputMethodService implements Keyboar
                 toggleEmojiPalette();
                 break;
 
+            case -10: // [COPY] BUTTON - Launches the Manual Copy Tool
+                // Hide keyboard
+                requestHideSelf(0);
+                // Start Overlay Service
+                Intent intent = new Intent(BubbleKeyboardService.this, TwoLineOverlayService.class);
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startService(intent);
+                break;
+
             case 32: // Space
-                // If long press triggered, do nothing (picker already shown)
+                // CRITICAL FIX: Only type space if we didn't just trigger the Long Press menu
                 if (!isSpaceLongPressed) {
                     ic.commitText(" ", 1);
                 }
@@ -193,7 +201,7 @@ public class BubbleKeyboardService extends InputMethodService implements Keyboar
         if (emojiPaletteView.getVisibility() == View.GONE) {
             // Show Emojis, Hide Keyboard
             kv.setVisibility(View.GONE);
-            candidateView.setVisibility(View.GONE); // Hide suggestions too
+            candidateView.setVisibility(View.GONE);
             emojiPaletteView.setVisibility(View.VISIBLE);
             isEmojiVisible = true;
         } else {
@@ -206,14 +214,14 @@ public class BubbleKeyboardService extends InputMethodService implements Keyboar
     }
 
     // =========================================================
-    // TOUCH EVENTS (Long Press Space)
+    // TOUCH EVENTS (Long Press Space Logic)
     // =========================================================
 
     @Override
     public void onPress(int primaryCode) {
         // Space Key Code is 32
         if (primaryCode == 32) {
-            isSpaceLongPressed = false;
+            isSpaceLongPressed = false; // Reset flag
             longPressHandler.postDelayed(spaceLongPressRunnable, LONG_PRESS_DELAY);
         }
     }
@@ -221,6 +229,7 @@ public class BubbleKeyboardService extends InputMethodService implements Keyboar
     @Override
     public void onRelease(int primaryCode) {
         if (primaryCode == 32) {
+            // Cancel the timer so the menu doesn't pop up if we tapped quickly
             longPressHandler.removeCallbacks(spaceLongPressRunnable);
         }
     }
@@ -230,13 +239,10 @@ public class BubbleKeyboardService extends InputMethodService implements Keyboar
     // =========================================================
 
     private void updateCandidates(String lastChar) {
-        // In a real production app, this would query a dictionary database.
-        // Here, we provide "Simulated" intelligent suggestions.
-        
+        // Simple prediction simulation
         if (candidateContainer == null) return;
         candidateContainer.removeAllViews();
         
-        // Dummy suggestions logic
         String[] suggestions;
         if (lastChar.equals("t")) {
             suggestions = new String[]{"the", "that", "this"};
