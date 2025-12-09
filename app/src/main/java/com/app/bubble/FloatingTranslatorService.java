@@ -140,6 +140,14 @@ public class FloatingTranslatorService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null) {
+            String action = intent.getAction();
+
+            // FIX for Issue #1: Handle Exit Action from Notification
+            if ("ACTION_EXIT".equals(action)) {
+                stopSelf();
+                return START_NOT_STICKY;
+            }
+
             // 1. Permission Setup
             if (intent.hasExtra("resultCode")) {
                 int resultCode = intent.getIntExtra("resultCode", Activity.RESULT_CANCELED);
@@ -158,7 +166,6 @@ public class FloatingTranslatorService extends Service {
             }
 
             // 2. Handle Manual Copy Tool Actions
-            String action = intent.getAction();
             if ("ACTION_ADD_PAGE".equals(action)) {
                 Rect cropRect = intent.getParcelableExtra("RECT");
                 if (cropRect != null) manualCaptureForAccumulator(cropRect);
@@ -187,7 +194,10 @@ public class FloatingTranslatorService extends Service {
             windowManager.removeView(cropSelectionView);
             cropSelectionView = null;
         }
-        if (floatingBubbleView != null) floatingBubbleView.setVisibility(View.VISIBLE);
+        if (floatingBubbleView != null && floatingBubbleView.getVisibility() == View.GONE) {
+             // If bubble was hidden, we might want to show it, or keep it hidden if user wanted
+             floatingBubbleView.setVisibility(View.VISIBLE);
+        }
 
         if (mediaProjection != null) {
             // Use Single Shot Mode
@@ -283,7 +293,7 @@ public class FloatingTranslatorService extends Service {
                 public void onSuccess(Text visionText) {
                     latestOcrText = visionText.getText();
                     if (latestOcrText != null && !latestOcrText.isEmpty()) {
-                        // GO TO TRANSLATION, NOT DEBUG
+                        // GO TO TRANSLATION
                         translateText(latestOcrText);
                     } else {
                         Toast.makeText(FloatingTranslatorService.this, "No text found", Toast.LENGTH_SHORT).show();
@@ -348,7 +358,7 @@ public class FloatingTranslatorService extends Service {
         );
         popupParams.gravity = Gravity.CENTER;
 
-        // Populate Views - REMOVED popup_original_text because it doesn't exist
+        // Populate Views 
         TextView tvTranslated = popupView.findViewById(R.id.popup_translated_text);
         if (tvTranslated != null) tvTranslated.setText(latestTranslation);
 
@@ -364,7 +374,9 @@ public class FloatingTranslatorService extends Service {
 
     private void manualCaptureForAccumulator(final Rect cropRect) {
         if (mediaProjection == null) {
-            Toast.makeText(this, "Permission missing", Toast.LENGTH_SHORT).show();
+            // FIX for Issue #1: If permission is lost, request it again instead of failing.
+            Toast.makeText(this, "Permission lost. Restarting...", Toast.LENGTH_SHORT).show();
+            requestPermissionRestart();
             return;
         }
         stopCapture(); // Ensure cleanup
@@ -439,22 +451,18 @@ public class FloatingTranslatorService extends Service {
             return;
         }
 
-        // Copy
+        // Copy to clipboard
         ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
         if (clipboard != null) {
             ClipData clip = ClipData.newPlainText("Bubble Copy", finalText);
             clipboard.setPrimaryClip(clip);
         }
 
-        // Show Debug Activity
-        DebugActivity.sFilteredText = finalText;
-        DebugActivity.sRawText = "Manual Capture Session";
-        DebugActivity.sErrorLog = "";
+        // FIX for Issue #7: Remove Debug Activity. Show Result in Popup.
+        latestTranslation = finalText; // Reuse the popup variable to show the result
+        showResultPopup();
+        
         globalTextAccumulator.setLength(0); // Reset
-
-        Intent intent = new Intent(this, DebugActivity.class);
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        startActivity(intent);
     }
 
     // =========================================================
@@ -467,13 +475,28 @@ public class FloatingTranslatorService extends Service {
             NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "Service", NotificationManager.IMPORTANCE_LOW);
             ((NotificationManager) getSystemService(NOTIFICATION_SERVICE)).createNotificationChannel(channel);
         }
+        
+        // FIX for Issue #1: Add Exit Action to Notification
+        Intent exitIntent = new Intent(this, FloatingTranslatorService.class);
+        exitIntent.setAction("ACTION_EXIT");
+        PendingIntent pExitIntent = PendingIntent.getService(this, 0, exitIntent, PendingIntent.FLAG_IMMUTABLE);
+        
+        Notification.Action exitAction = new Notification.Action.Builder(
+                android.R.drawable.ic_menu_close_clear_cancel, "EXIT", pExitIntent).build();
+
         Notification.Builder builder = (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) ?
                 new Notification.Builder(this, CHANNEL_ID) : new Notification.Builder(this);
         
         Intent intent = new Intent(this, MainActivity.class);
         PendingIntent pIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE);
         
-        startForeground(1337, builder.setContentTitle("Bubble Translator").setSmallIcon(android.R.drawable.ic_menu_search).setContentIntent(pIntent).build());
+        builder.setContentTitle("Bubble Translator")
+               .setContentText("Tap to open. Use Exit button to close.")
+               .setSmallIcon(android.R.drawable.ic_menu_search)
+               .setContentIntent(pIntent)
+               .addAction(exitAction); // Add the button
+        
+        startForeground(1337, builder.build());
     }
 
     private void showFloatingBubble() {
@@ -509,7 +532,13 @@ public class FloatingTranslatorService extends Service {
                         return true;
                     case MotionEvent.ACTION_UP:
                         closeTargetView.setVisibility(View.GONE);
-                        if (isBubbleOverCloseTarget) { stopSelf(); return true; }
+                        if (isBubbleOverCloseTarget) {
+                            // FIX for Issue #1: Hide bubble instead of stopSelf()
+                            // This keeps permission alive for Copy Tool.
+                            floatingBubbleView.setVisibility(View.GONE);
+                            Toast.makeText(FloatingTranslatorService.this, "Bubble Hidden. Use Notification to Exit.", Toast.LENGTH_SHORT).show();
+                            return true; 
+                        }
                         if (System.currentTimeMillis() - lastClickTime < 200) {
                             showCropSelectionTool();
                         }
