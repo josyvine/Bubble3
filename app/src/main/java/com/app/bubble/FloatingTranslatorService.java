@@ -56,6 +56,7 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -329,13 +330,11 @@ public class FloatingTranslatorService extends Service {
         if (popupView != null) windowManager.removeView(popupView);
 
         LayoutInflater inflater = LayoutInflater.from(this);
-        // Assuming your layout name is layout_popup_result or similar. 
-        // Based on original code context, I will use a standard name.
-        // If your original zip had 'layout_popup.xml', this is it.
+        // FIX: Correct layout name to match your XML
         try {
-            popupView = inflater.inflate(R.layout.layout_popup_result, null);
+            popupView = inflater.inflate(R.layout.layout_result_popup, null);
         } catch (Exception e) {
-            // Fallback if name differs
+            e.printStackTrace();
             return; 
         }
 
@@ -349,11 +348,8 @@ public class FloatingTranslatorService extends Service {
         );
         popupParams.gravity = Gravity.CENTER;
 
-        // Populate Views
-        TextView tvOriginal = popupView.findViewById(R.id.popup_original_text); // Check ID
+        // Populate Views - REMOVED popup_original_text because it doesn't exist
         TextView tvTranslated = popupView.findViewById(R.id.popup_translated_text);
-        
-        if (tvOriginal != null) tvOriginal.setText(latestOcrText);
         if (tvTranslated != null) tvTranslated.setText(latestTranslation);
 
         windowManager.addView(popupView, popupParams);
