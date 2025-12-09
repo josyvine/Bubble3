@@ -4,99 +4,114 @@
     android:layout_height="match_parent"
     android:background="#40000000">
 
-    <!-- Helper Text -->
-    <TextView
-        android:id="@+id/helper_text"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_centerInParent="true"
-        android:text="1. Frame Text\n2. Click ADD\n3. Scroll &amp; Repeat\n4. Click DONE"
-        android:textColor="#FFFFFF"
-        android:textSize="14sp"
-        android:gravity="center"
-        android:padding="8dp"
-        android:background="#80000000"
-        android:layout_marginBottom="100dp"/>
-
-    <!-- Top Line (Start of Selection) - Green -->
-    <View
-        android:id="@+id/line_top"
+    <!-- LINES CONTAINER: This area captures touches to move the lines -->
+    <RelativeLayout
+        android:id="@+id/lines_container"
         android:layout_width="match_parent"
-        android:layout_height="4dp"
-        android:background="#4CAF50"
-        android:layout_marginTop="200dp" />
+        android:layout_height="match_parent"
+        android:layout_marginBottom="70dp"> <!-- Margin to not overlap with bottom bar -->
 
-    <!-- Visual Handle for Top Line -->
-    <ImageView
-        android:id="@+id/handle_top"
-        android:layout_width="40dp"
-        android:layout_height="40dp"
-        android:src="@android:drawable/btn_star_big_on"
-        android:layout_alignTop="@id/line_top"
-        android:layout_alignParentEnd="true"
-        android:layout_marginEnd="16dp"
-        android:layout_marginTop="-18dp"
-        android:contentDescription="Drag Handle"
-        android:tint="#4CAF50"/>
+        <!-- Helper Text Instructions -->
+        <TextView
+            android:id="@+id/helper_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_centerInParent="true"
+            android:text="1. Drag Lines to text\n2. Click ADD PAGE\n3. Scroll &amp; Repeat"
+            android:textColor="#FFFFFF"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:padding="12dp"
+            android:background="#AA000000"/>
 
-    <!-- Bottom Line (End of Selection) - Red -->
-    <View
-        android:id="@+id/line_bottom"
-        android:layout_width="match_parent"
-        android:layout_height="4dp"
-        android:background="#F44336"
-        android:layout_marginTop="400dp"
-        android:visibility="visible"/>
+        <!-- Top Line (Start of Selection) - Green -->
+        <View
+            android:id="@+id/line_top"
+            android:layout_width="match_parent"
+            android:layout_height="4dp"
+            android:background="#4CAF50"
+            android:layout_marginTop="200dp" />
 
-    <!-- Visual Handle for Bottom Line -->
-    <ImageView
-        android:id="@+id/handle_bottom"
-        android:layout_width="40dp"
-        android:layout_height="40dp"
-        android:src="@android:drawable/btn_star_big_on"
-        android:layout_alignTop="@id/line_bottom"
-        android:layout_alignParentEnd="true"
-        android:layout_marginEnd="16dp"
-        android:layout_marginTop="-18dp"
-        android:contentDescription="Drag Handle"
-        android:tint="#F44336"
-        android:visibility="visible"/>
+        <!-- Visual Handle for Top Line (Large touch target) -->
+        <ImageView
+            android:id="@+id/handle_top"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:src="@android:drawable/btn_star_big_on"
+            android:layout_alignTop="@id/line_top"
+            android:layout_alignParentEnd="true"
+            android:layout_marginEnd="16dp"
+            android:layout_marginTop="-22dp"
+            android:contentDescription="Drag Handle Top"
+            android:tint="#4CAF50"/>
 
-    <!-- Action Buttons Container -->
+        <!-- Bottom Line (End of Selection) - Red -->
+        <!-- ALWAYS VISIBLE NOW -->
+        <View
+            android:id="@+id/line_bottom"
+            android:layout_width="match_parent"
+            android:layout_height="4dp"
+            android:background="#F44336"
+            android:layout_marginTop="500dp"/>
+
+        <!-- Visual Handle for Bottom Line -->
+        <!-- ALWAYS VISIBLE NOW -->
+        <ImageView
+            android:id="@+id/handle_bottom"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:src="@android:drawable/btn_star_big_off"
+            android:layout_alignTop="@id/line_bottom"
+            android:layout_alignParentEnd="true"
+            android:layout_marginEnd="16dp"
+            android:layout_marginTop="-22dp"
+            android:contentDescription="Drag Handle Bottom"
+            android:tint="#F44336"/>
+
+    </RelativeLayout>
+
+    <!-- CONTROL BAR (Fixed at bottom) -->
     <LinearLayout
-        android:layout_width="wrap_content"
+        android:id="@+id/control_bar"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:layout_alignParentBottom="true"
-        android:layout_centerHorizontal="true"
-        android:layout_marginBottom="30dp"
-        android:gravity="center">
+        android:background="#EE222222"
+        android:padding="10dp"
+        android:gravity="center_vertical">
 
-        <!-- CLOSE (X) -->
-        <ImageButton
-            android:id="@+id/btn_close"
+        <!-- CLOSE BUTTON (X Icon) -->
+        <ImageView
+            android:id="@+id/btn_close_overlay"
             android:layout_width="50dp"
             android:layout_height="50dp"
-            android:layout_marginEnd="20dp"
             android:src="@android:drawable/ic_menu_close_clear_cancel"
-            android:background="@android:drawable/btn_default"
-            android:contentDescription="Close Overlay"/>
+            android:background="?android:attr/selectableItemBackground"
+            android:padding="10dp"
+            android:layout_marginEnd="10dp"
+            android:contentDescription="Close"/>
 
-        <!-- ADD PAGE (Camera) -->
+        <!-- ADD PAGE BUTTON (Blue) -->
+        <!-- This triggers the screenshot/crop/accumulator logic -->
         <Button
-            android:id="@+id/btn_add"
-            android:layout_width="wrap_content"
+            android:id="@+id/btn_add_page"
+            android:layout_width="0dp"
+            android:layout_weight="1"
             android:layout_height="wrap_content"
-            android:text="ADD"
+            android:text="ADD PAGE"
             android:textStyle="bold"
             android:backgroundTint="#2196F3"
             android:textColor="#FFFFFF"
-            android:layout_marginEnd="10dp"/>
+            android:layout_marginEnd="8dp"/>
 
-        <!-- DONE (Check) -->
+        <!-- DONE BUTTON (Green) -->
+        <!-- This finishes the accumulation and copies text -->
         <Button
             android:id="@+id/btn_done"
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
+            android:layout_weight="1"
             android:layout_height="wrap_content"
             android:text="DONE"
             android:textStyle="bold"
