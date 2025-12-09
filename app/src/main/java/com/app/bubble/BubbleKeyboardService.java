@@ -70,7 +70,9 @@ public class BubbleKeyboardService extends InputMethodService implements Keyboar
         LayoutInflater inflater = getLayoutInflater();
 
         // 2. Add Candidate View (Predictions) - Top
-        candidateView = inflater.inflate(R.layout.candidate_view, null);
+        // FIX: Use 'mainLayout, false' to respect the 45dp height from XML. 
+        // Using 'null' was causing it to stretch to full screen.
+        candidateView = inflater.inflate(R.layout.candidate_view, mainLayout, false);
         candidateContainer = candidateView.findViewById(R.id.candidate_container);
         
         // Setup Clipboard Button (Issue #6)
@@ -87,8 +89,8 @@ public class BubbleKeyboardService extends InputMethodService implements Keyboar
         mainLayout.addView(candidateView);
 
         // 3. Add Keyboard View - Middle
-        // We inflate layout_real_keyboard which must contain the KeyBackground attribute for visual feedback
-        kv = (KeyboardView) inflater.inflate(R.layout.layout_real_keyboard, null);
+        // FIX: Use 'mainLayout, false' to ensure proper layout params
+        kv = (KeyboardView) inflater.inflate(R.layout.layout_real_keyboard, mainLayout, false);
         
         // Load Layouts
         keyboardQwerty = new Keyboard(this, R.xml.qwerty);
@@ -100,7 +102,7 @@ public class BubbleKeyboardService extends InputMethodService implements Keyboar
         mainLayout.addView(kv);
 
         // 4. Add Emoji Palette - Hidden by default
-        emojiPaletteView = inflater.inflate(R.layout.layout_emoji_palette, null);
+        emojiPaletteView = inflater.inflate(R.layout.layout_emoji_palette, mainLayout, false);
         emojiPaletteView.setVisibility(View.GONE);
         
         // Initialize Emoji Grid logic
