@@ -56,20 +56,16 @@
 
     </LinearLayout>
 
-    <!-- EMOJI GRID (Center) -->
-    <GridView
+    <!-- EMOJI LIST (Center) - CHANGED to RecyclerView for Horizontal Sliding -->
+    <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/emoji_grid"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:numColumns="7"
         android:padding="4dp"
-        android:verticalSpacing="8dp"
-        android:horizontalSpacing="4dp"
         android:clipToPadding="false"
-        android:scrollbarStyle="outsideOverlay"
-        android:listSelector="@android:color/transparent"
-        android:gravity="center"/>
+        android:scrollbars="horizontal"
+        android:background="#F2F2F2"/>
 
     <!-- BOTTOM CONTROL BAR -->
     <LinearLayout
@@ -103,7 +99,7 @@
             android:id="@+id/btn_emoji_backspace"
             android:layout_width="60dp"
             android:layout_height="match_parent"
-            android:src="@drawable/ic_key_backspace"
+            android:src="@android:drawable/ic_input_delete"
             android:background="?android:attr/selectableItemBackground"
             android:scaleType="centerInside"
             android:contentDescription="Backspace"/>
