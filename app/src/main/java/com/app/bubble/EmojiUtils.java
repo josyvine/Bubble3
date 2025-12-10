@@ -78,8 +78,9 @@ public class EmojiUtils {
         
         if (recyclerView == null) return;
 
-        // FIX: Set spanCount to 8. This creates standard professional layout.
-        GridLayoutManager layoutManager = new GridLayoutManager(context, 8, GridLayoutManager.HORIZONTAL, false);
+        // FIX: Set spanCount to 4. In Horizontal Mode, this means 4 ROWS.
+        // This solves the dense/barcode issue.
+        GridLayoutManager layoutManager = new GridLayoutManager(context, 4, GridLayoutManager.HORIZONTAL, false);
         recyclerView.setLayoutManager(layoutManager);
 
         // Set Adapter
@@ -110,14 +111,16 @@ public class EmojiUtils {
         @NonNull
         @Override
         public EmojiViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-            // FIX: Use EmojiTextView to fix "Box" characters on older Androids
+            // Use EmojiTextView to support modern emojis on older devices
             EmojiTextView tv = new EmojiTextView(parent.getContext());
             
-            // FIX: Dynamic Width Calculation for Professional Look (Screen / 8)
+            // FIX: Dynamic Width Calculation for Professional Look
+            // Calculate width to fit exactly 7 emojis per screen width
             int screenWidth = parent.getResources().getDisplayMetrics().widthPixels;
-            int itemWidth = screenWidth / 8;
+            int itemWidth = screenWidth / 7;
             
-            // Set Height to 130px to ensure clear rows
+            // Set Height to MATCH_PARENT divided by 4 (approx 70-80dp) or fixed comfortable size
+            // Here we use 130px (approx 45-50dp) which fits nicely in 4 rows
             tv.setLayoutParams(new ViewGroup.LayoutParams(itemWidth, 130)); 
             
             // FIX: Set Text Size to 25 (Balanced)
