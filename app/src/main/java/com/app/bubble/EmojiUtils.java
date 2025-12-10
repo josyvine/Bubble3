@@ -10,6 +10,8 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
+// FIX: Import EmojiTextView to handle modern emojis on older Android versions
+import androidx.emoji2.widget.EmojiTextView;
 
 public class EmojiUtils {
 
@@ -76,9 +78,8 @@ public class EmojiUtils {
         
         if (recyclerView == null) return;
 
-        // FIX: Set spanCount to 4. In Horizontal Grid, this creates 4 Rows.
-        // This solves the "too many rows" stacking issue.
-        GridLayoutManager layoutManager = new GridLayoutManager(context, 4, GridLayoutManager.HORIZONTAL, false);
+        // FIX: Set spanCount to 8. This creates standard professional layout.
+        GridLayoutManager layoutManager = new GridLayoutManager(context, 8, GridLayoutManager.HORIZONTAL, false);
         recyclerView.setLayoutManager(layoutManager);
 
         // Set Adapter
@@ -109,17 +110,17 @@ public class EmojiUtils {
         @NonNull
         @Override
         public EmojiViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-            TextView tv = new TextView(parent.getContext());
+            // FIX: Use EmojiTextView to fix "Box" characters on older Androids
+            EmojiTextView tv = new EmojiTextView(parent.getContext());
             
-            // FIX: Dynamic Width Calculation for Professional Look
-            // Calculate width to fit exactly 7 emojis per screen width
+            // FIX: Dynamic Width Calculation for Professional Look (Screen / 8)
             int screenWidth = parent.getResources().getDisplayMetrics().widthPixels;
-            int itemWidth = screenWidth / 7;
+            int itemWidth = screenWidth / 8;
             
-            // Set Height to 130px (approx 45dp) to allow 4 clear rows
+            // Set Height to 130px to ensure clear rows
             tv.setLayoutParams(new ViewGroup.LayoutParams(itemWidth, 130)); 
             
-            // FIX: Set Text Size to 25 (Balanced, not too big)
+            // FIX: Set Text Size to 25 (Balanced)
             tv.setTextSize(25); 
             
             tv.setGravity(Gravity.CENTER);
