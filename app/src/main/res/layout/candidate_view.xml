@@ -6,8 +6,7 @@
     android:background="#F0F0F0"
     android:gravity="center_vertical">
 
-    <!-- CLIPBOARD BUTTON (Fixed on Left) -->
-    <!-- Updated src to use local @drawable/ic_paste to fix build error -->
+    <!-- CLIPBOARD BUTTON -->
     <ImageButton
         android:id="@+id/btn_clipboard"
         android:layout_width="45dp"
@@ -18,6 +17,18 @@
         android:padding="10dp"
         android:contentDescription="Clipboard History" />
 
+    <!-- KEYBOARD SWITCHER BUTTON (New) -->
+    <!-- Fixes the Spacebar long-press issue by providing a dedicated button -->
+    <ImageButton
+        android:id="@+id/btn_keyboard_switch"
+        android:layout_width="45dp"
+        android:layout_height="match_parent"
+        android:src="@drawable/ic_keyboard_switch"
+        android:background="?android:attr/selectableItemBackground"
+        android:scaleType="centerInside"
+        android:padding="10dp"
+        android:contentDescription="Switch Keyboard" />
+
     <!-- Vertical Separator Line -->
     <View
         android:layout_width="1dp"
@@ -27,7 +38,6 @@
         android:background="#CCCCCC" />
 
     <!-- SCROLLABLE SUGGESTIONS AREA -->
-    <!-- This contains the predictions (Issue #2) -->
     <HorizontalScrollView
         android:layout_width="0dp"
         android:layout_height="match_parent"
@@ -45,10 +55,7 @@
             android:paddingStart="5dp"
             android:paddingEnd="5dp">
 
-            <!-- 
-               TextViews for suggestions (e.g., "The", "And") 
-               will be added here dynamically by BubbleKeyboardService.java 
-            -->
+            <!-- Suggestions added dynamically -->
 
         </LinearLayout>
 
